@@ -224,3 +224,51 @@ def test_progress_and_history_shape(tmp_path):
                       "wall_time_s", "is_best", "started_at"}
     assert [e["eval_index"] for e in svc.evals] == list(range(len(svc.evals)))
     assert sum(1 for e in svc.evals if e["stage"] in ("elastic", "plastic")) == 10
+
+
+def test_o16_default_plastic_optimizer_lsq_and_alias(tmp_path):
+    spec = replace(_spec(tmp_path, n_eval=10, n_runs=1), optimizer=("", {}), elastic_optimizer=("", {}))
+    res = run_calibration(spec, _svc(tmp_path))
+    assert res["metadata"]["traceability"]["plugins"]["optimizer"] == {"lsq": "1.0.0"}
+    from matobserver.core.config import SPECS_BY_KEY
+    if "engine.stages.plastic.optimizer" not in SPECS_BY_KEY:  # core 1.0 표: 1.0 별칭 키 경로
+        res2 = run_calibration(spec, _svc(tmp_path, {"engine.plastic_stage.optimizer": "random"}, sub="b"))
+        assert "random" in res2["metadata"]["traceability"]["plugins"]["optimizer"]
+    else:  # 새 키 우선
+        res2 = run_calibration(spec, _svc(tmp_path, {"engine.stages.plastic.optimizer": "random",
+                                                     "engine.plastic_stage.optimizer": "bo"}, sub="b"))
+        assert set(res2["metadata"]["traceability"]["plugins"]["optimizer"]) == {"lsq", "random"}
+
+
+def test_o17_card_rendered_from_result_material(tmp_path):
+    D.CardAdapter.RENDERED.clear()
+    res = run_calibration(_spec(tmp_path, solver=("card_beam", {}), n_eval=12, n_runs=1), _svc(tmp_path))
+    s = res["slots"][0]
+    assert len(D.CardAdapter.RENDERED) == 1
+    nm = D.CardAdapter.RENDERED[0]["neutral"]
+    assert nm.to_card_blocks() == s["card_blocks"]  # 결과(유효 범위 절단) 카드 그대로
+    assert nm.table[-1].plastic_strain == pytest.approx(s["valid_range"]["max_plastic_strain"])
+    assert D.CardAdapter.RENDERED[0]["slot"].mid == 101
+    assert set(D.CardAdapter.RENDERED[0]["options"]) == {"title", "header_comments"}
+    arts = [a for a in res["artifacts"] if a["kind"] == "card_lsdyna"]
+    assert len(arts) == 1 and arts[0]["slot"] == "body"
+    plain = run_calibration(_spec(tmp_path, n_eval=8, n_runs=1), _svc(tmp_path, sub="b"))  # card_format=None → 생략
+    assert not [a for a in plain["artifacts"] if a["kind"] == "card_lsdyna"]
+
+
+def test_o19_option_priority(tmp_path):
+    base = _spec(tmp_path, n_eval=8, n_runs=1)
+    slots = (dict(base.materials.slots[0], material_model="mat024"),)
+    spec = replace(base, materials=replace(base.materials, slots=slots))
+    svc = _svc(tmp_path, {"engine.default_plasticity_mode": "coeff"})
+    svc.job_options = {"plasticity_mode": "table", "explicit_check": {"enabled": True}}
+    r = run_calibration(spec, svc)
+    assert r["slots"][0]["material_model"]["name"] == "mat024_table"  # job_options > config
+    assert r["metadata"]["explicit_check"]["enabled"] is True
+    object.__setattr__(spec, "plasticity_mode", "coeff")  # spec 필드(1.1) > job_options
+    object.__setattr__(spec, "explicit_check", {"enabled": False})
+    svc2 = _svc(tmp_path, sub="b")
+    svc2.job_options = {"plasticity_mode": "table", "explicit_check": {"enabled": True}}
+    r2 = run_calibration(spec, svc2)
+    assert r2["slots"][0]["material_model"]["name"] == "mat024_coeff"
+    assert r2["metadata"]["explicit_check"] == {"enabled": False}

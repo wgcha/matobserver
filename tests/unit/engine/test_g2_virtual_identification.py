@@ -1,8 +1,8 @@
 """G2 가상 역식별 (module-boundaries.md §5.3 O-4·O-5·O-6·O-7) — surrogate_beam 가상 곡선, LS-DYNA 없음.
 
-탄소성(O-5)은 `alignment.elastic_dev_tol = 0.01`로 돌린다: 기본 0.05에서는 Ω1(선형 대비 5% 이탈까지)이 소성 초기
-구간을 포함해 탄성 단계 E가 약 −1.3% 편향되고(R8로 소성 단계에서 E 고정), 그 편향이 테이블·J로 전파된다
-(test_elastic_bias_default_tolerance 가 이 계약 기본값 거동을 기록한다). T-1/T-7에 따라 G4에서 조정할 값이다.
+계약 1.1 기본값으로 돌린다: `alignment.elastic_dev_tol` = 0.015(testspec.md §5.1), `first_node_strain` = 0.002,
+탄소성 기본 최적화기 lsq. core 설정 표가 아직 1.0 값(0.05)이면 G2_CFG 가 1.1 계약 기본값을 명시해 맞춘다(B-13 병합 후 동일).
+1.0 기본값 0.05의 E 편향은 test_elastic_bias_v10_tolerance 가 기록한다.
 """
 
 from __future__ import annotations
@@ -19,10 +19,11 @@ from matobserver.engine import preflight, run_calibration
 
 W, H, L, E_TRUE = 0.010, 0.004, 0.064, 2.3e9
 SWIFT = (1.0e8, 0.02, 0.2)
-G2_CFG = {"alignment.elastic_dev_tol": 0.01}
+G2_CFG = {} if Config().get("alignment.elastic_dev_tol") == 0.015 else {"alignment.elastic_dev_tol": 0.015}
+STRICT = {"alignment.elastic_dev_tol": 0.01}  # 3% 테이블 기준을 여유 있게 통과하는 값(1.1 기본 0.015에서는 3.3–3.5%)
 
 
-def _single(tmp: Path, model: str, *, noise: float, options=None, optimizer=("bo", {}), n_eval=120, cfg=None,
+def _single(tmp: Path, model: str, *, noise: float, options=None, optimizer=("", {}), n_eval=120, cfg=None,
             plastic=True, n_runs=1, params=None):
     mats = {"body": (E_TRUE, D.swift_table(*SWIFT) if plastic else None)}
     runs = []
@@ -35,7 +36,7 @@ def _single(tmp: Path, model: str, *, noise: float, options=None, optimizer=("bo
     if params:
         slot["params"] = params
     spec = D.make_spec([t], [slot], optimizer=optimizer, max_evaluations=n_eval)
-    svc = D.FakeServices(tmp, D.make_registry(), Config(cfg or {}))
+    svc = D.FakeServices(tmp, D.make_registry(), Config({**G2_CFG, **(cfg or {})}))
     return run_calibration(spec, svc), svc
 
 
@@ -59,14 +60,15 @@ def test_o4_elastic_mode_a(tmp_path, noise):
 
 
 @pytest.mark.parametrize("noise", [0.0, 0.005])
-@pytest.mark.parametrize("opt", ["bo", "lsq"])
-def test_o5_coeff_swift(tmp_path, noise, opt):
-    res, _ = _single(tmp_path, "mat024_coeff", noise=noise, optimizer=(opt, {}), cfg=G2_CFG)
+@pytest.mark.parametrize("opt,cfg,tab_tol", [("", STRICT, 0.03), ("", {}, 0.04), ("bo", STRICT, None)])
+def test_o5_coeff_swift(tmp_path, noise, opt, cfg, tab_tol):
+    """"" = 설정 기본 최적화기(1.1: lsq). cfg={} 는 1.1 기본 정렬값 — 테이블 3.5%까지 관측(보고 항목)."""
+    res, _ = _single(tmp_path, "mat024_coeff", noise=noise, optimizer=(opt, {}), cfg=cfg)
     s = res["slots"][0]
     J = res["metadata"]["residuals"]["J"]
     assert J <= 0.01, J  # 계수 모드 기준(O-5): F-δ J ≤ 0.01
-    if opt == "lsq":  # 경화식 계수는 서로 강상관(Swift K·ε0·n) — 테이블 오차는 lsq 경로에서만 3%로 추가 확인
-        assert _table_err(s) <= 0.03
+    if tab_tol is not None:  # 1.1: 계수 비유일 → 판정은 테이블 기준 (BO는 계수 강상관으로 3–11%, 판정 대상 아님)
+        assert _table_err(s) <= tab_tol
     assert s["hardening"]["law"] == "swift" and s["valid_range"]["max_plastic_strain"] > 0.03
     assert abs(s["card_blocks"]["elastic"]["youngs_modulus"] / E_TRUE - 1) <= 0.01
     # 결과 테이블은 εp ∈ [0, εp_valid] 50점 (result.md §3.1)
@@ -75,11 +77,13 @@ def test_o5_coeff_swift(tmp_path, noise, opt):
 
 
 @pytest.mark.parametrize("noise", [0.0, 0.005])
-def test_o5_table(tmp_path, noise):
-    res, _ = _single(tmp_path, "mat024_table", noise=noise, optimizer=("lsq", {}), n_eval=200, cfg=G2_CFG,
-                     options={"table_nodes": 5, "max_strain": 0.04, "first_node_strain": 0.002})
+@pytest.mark.parametrize("cfg,tab_tol", [(STRICT, 0.03), ({}, 0.04)])
+def test_o5_table(tmp_path, noise, cfg, tab_tol):
+    """cfg={}: 1.1 기본값(elastic_dev_tol 0.015, first_node_strain 0.002, lsq) — 3.3–3.5% 관측(3% 미달, 보고)."""
+    res, _ = _single(tmp_path, "mat024_table", noise=noise, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04},
+                     cfg=cfg)
     s = res["slots"][0]
-    assert _table_err(s) <= 0.03
+    assert _table_err(s) <= tab_tol
     assert res["metadata"]["residuals"]["J"] <= 0.01
     stresses = [r["true_stress"] for r in s["card_blocks"]["table"]]
     assert all(b >= a for a, b in zip(stresses, stresses[1:]))
@@ -93,10 +97,10 @@ def test_o5_exact_E_table_recovery(tmp_path):
     assert res["metadata"]["residuals"]["J"] <= 0.001
 
 
-def test_elastic_bias_default_tolerance(tmp_path):
-    """계약 기본 elastic_dev_tol=0.05: 점진 항복 재료에서 탄성 단계 E 편향이 −2%~0 (기록용, 반환 보고 항목)."""
+def test_elastic_bias_v10_tolerance(tmp_path):
+    """1.0 기본 elastic_dev_tol=0.05: 점진 항복 재료에서 탄성 단계 E 편향 −2%~−0.5% (1.1에서 0.015로 바꾼 근거)."""
     res, _ = _single(tmp_path, "mat024_coeff", noise=0.0, optimizer=("random", {}), n_eval=20,
-                     cfg={"identifiability.post_fit": False})
+                     cfg={"identifiability.post_fit": False, "alignment.elastic_dev_tol": 0.05})
     err = res["slots"][0]["card_blocks"]["elastic"]["youngs_modulus"] / E_TRUE - 1
     assert -0.02 <= err < -0.005
 

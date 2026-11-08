@@ -148,3 +148,8 @@ def test_t9_reference_strain_rate(make_plugin, flex_run):
     none = T.TestData(**{**d.__dict__, "meta": {"conditions": {}}})
     i3 = ts.reference_strain_rate(none, g, {"span": L})
     assert i3.value_1_s is None and i3.velocity_source == "none"
+
+
+def test_t10_load_mode(make_plugin):
+    assert make_plugin({}).load_mode in {"three_point_bending", "four_point_bending", "uniaxial_compression",
+                                          "dynamic_bending"}

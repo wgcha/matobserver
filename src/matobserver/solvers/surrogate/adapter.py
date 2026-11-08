@@ -299,6 +299,11 @@ class SurrogateBeamAdapter:
             return t.copy()
         raise ValueError(f"surrogate_beam: unsupported extractor {name!r}")
 
+    # ---- 카드 (1.1) ----
+    def render_card(self, neutral: NeutralMaterial, slot: Any, options: Mapping[str, Any]) -> str:
+        """card_format=None: 대리모델은 카드 산출물이 없다 (plugins.md §4.2, S13)."""
+        raise NotImplementedError("surrogate_beam has no card format (card_format=None)")
+
     # ---- 정리 ----
     def cleanup(self, prepared: PreparedRun, keep: Literal["all", "results", "minimal"]) -> None:
         # 덱(case json)·결과(result json)만 쓰므로 지울 임시 파일이 없다 (작업 폴더 밖은 건드리지 않음).

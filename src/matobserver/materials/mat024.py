@@ -9,7 +9,7 @@
 `to_neutral`은 εp ∈ [0, `max_strain`]에서 `table_points`점을 샘플(첫 점 0, `table_spacing` geometric이면 첫 간격
 `table_first_step`부터 기하 간격). 엔진은 결과 테이블을 εp_valid까지 다시 샘플하기 위해 같은 옵션 키로 인스턴스를 다시 만든다.
 
-`mat024_table`: 노드 εp = 0 < εp_1 < … < εp_m(= `max_strain`), 노드 응력 = σy + Σ_{j≤i} dsig_j (dsig ≥ 0 → 단조성은 변수 정의로 보장, P-4).
+`mat024_table`: 노드 εp = 0 < εp_1(=`first_node_strain`, 1.1 기본 0.002) < … < εp_m(= `max_strain`), 노드 응력 = σy + Σ_{j≤i} dsig_j (dsig ≥ 0 → 단조성은 변수 정의로 보장, P-4).
 """
 
 from __future__ import annotations
@@ -183,7 +183,9 @@ class Mat024Table(_Mat024Common):
             self.max_strain = nodes[-1]
         else:
             m = self.table_nodes - 1
-            first = float(self.options.get("first_node_strain", self.max_strain / 100.0))
+            first = float(self.options.get("first_node_strain") or 0.002)  # 1.1 기본 0.002
+            if first >= self.max_strain:
+                first = self.max_strain / 100.0
             if self.node_spacing == "linear" or m == 1:
                 self.nodes = np.linspace(0.0, self.max_strain, m + 1)
             elif self.node_spacing == "geometric":

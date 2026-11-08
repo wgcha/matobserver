@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import math
 
+import numpy as np
+
 import pytest
 
 from matobserver.core.types import Constraint, EvalOutcome, ParamSpace, ParamSpec
@@ -133,3 +135,24 @@ def test_o8_max_batch(make_plugin):
     opt.setup(_space(), 1, [])
     with pytest.raises(ValueError):
         opt.ask(opt.max_batch + 1)
+
+
+def test_o9_residual_components(make_plugin, plugin_name):
+    """(1.1) components 의 residual: 키가 있으면 사용(lsq), 없으면 스칼라 모드. 다른 최적화기는 무시해도 예외 없음."""
+    sp = _space()
+    g = np.linspace(0, 1, 30)
+    for with_r in (True, False):
+        opt = make_plugin({})
+        opt.setup(sp, 4, [{"a": 0.0, "b": 1e9}])
+        best = math.inf
+        for _ in range(30):
+            if opt.suggest_stop().stop:
+                break
+            th = opt.ask(1)[0]
+            r = (th["a"] - 0.7) * g + (math.log10(th["b"]) - 8.2) * g**2
+            J = float(np.linalg.norm(r))
+            comp = {f"residual:{i:07d}": float(v) for i, v in enumerate(r)} if with_r else {}
+            opt.tell([th], [EvalOutcome(J, False, comp)])
+            best = min(best, J)
+        if plugin_name == "lsq":
+            assert best < 1e-3

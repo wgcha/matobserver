@@ -161,3 +161,10 @@ def test_s11_single_element(tmp_path):
     assert np.max(np.abs(c.y / np.interp(c.x, ep, sg) - 1)) <= 0.01
     assert c.x[0] == 0.0 and c.x[-1] == pytest.approx(0.1)
     assert len(ad.single_element_uniaxial(_mat(), 0.1, tmp_path / "rt2", 10.0).x) == 0
+
+
+def test_s13_render_card_not_supported():
+    ad = SurrogateBeamAdapter({})
+    assert getattr(ad.capabilities(), "card_format", None) is None
+    with pytest.raises(NotImplementedError):
+        ad.render_card(_mat(), T.SlotBinding("body", (1,), 101, 101, {}, 1101), {"title": "x", "header_comments": []})

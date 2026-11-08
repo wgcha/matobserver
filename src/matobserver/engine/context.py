@@ -48,7 +48,38 @@ MATERIAL_CONFIG_OPTIONS = {  # 설정 → 재료 모델 옵션 (요청·레지�
     "table_nodes": "material.mat024_table.nodes",
     "table_spacing": "result.table_spacing",
     "table_first_step": "result.table_first_step",
+    "first_node_strain": "material.mat024_table.first_node_strain",  # 1.1
 }
+
+CONTRACT_1_1_DEFAULTS = {  # core 설정 표에 아직 없을 때의 1.1 계약 기본값
+    "material.mat024_table.first_node_strain": 0.002,
+    "engine.stages.elastic.optimizer": "lsq",
+    "engine.stages.plastic.optimizer": "lsq",
+}
+
+
+def cfg_get(cfg: Any, key: str, default: Any = None) -> Any:
+    """설정 키가 core 표에 없을 수도 있는 1.1 키를 안전하게 읽는다."""
+    try:
+        if key in cfg:
+            return cfg.get(key)
+    except Exception:
+        pass
+    return CONTRACT_1_1_DEFAULTS.get(key, default)
+
+
+def job_option(spec: Any, services: Any, key: str) -> Any:
+    """(1.1) 잡 옵션 우선순위: CalibrationSpec 필드 → services.job_options[key] → None(호출자가 설정으로)."""
+    v = getattr(spec, key, None)
+    if v is not None:
+        return v
+    jo = getattr(services, "job_options", None)
+    if jo:
+        try:
+            v = jo.get(key) if hasattr(jo, "get") else None
+        except Exception:
+            v = None
+    return v
 
 
 def warn(code: str, message: str, **kw: Any) -> dict[str, Any]:
@@ -264,7 +295,7 @@ def _rel_close(a: Mapping[str, float], b: Mapping[str, float], tol: float) -> bo
 def prepare_slots(spec: CalibrationSpec, services: Any, warnings: list[dict[str, Any]]) -> list[SlotCtx]:
     reg, cfg = services.registry, services.config
     out: list[SlotCtx] = []
-    default_mode = cfg.get("engine.default_plasticity_mode")
+    default_mode = job_option(spec, services, "plasticity_mode") or cfg.get("engine.default_plasticity_mode")
     dens = float(cfg.get("material.default_density_kg_m3"))
     for s in spec.materials.slots:
         s = dict(s)
@@ -273,7 +304,8 @@ def prepare_slots(spec: CalibrationSpec, services: Any, warnings: list[dict[str,
         ctx = {"plasticity_mode": s.get("plasticity_mode") or default_mode}
         mname = reg.resolve_name("material_model", str(s["material_model"]), ctx)
         entry = reg.enabled_entry("material_model", mname)
-        opts = {k: cfg.get(v) for k, v in MATERIAL_CONFIG_OPTIONS.items()}
+        opts = {k: cfg_get(cfg, v) for k, v in MATERIAL_CONFIG_OPTIONS.items()}
+        opts = {k: v for k, v in opts.items() if v is not None}
         opts.update({k: v for k, v in entry.defaults.items()})
         opts.update(dict(s.get("options") or {}))
         ref, defaulted = neutral_from_any(s.get("reference"), dens)

@@ -41,7 +41,7 @@ DEFAULTS: dict[str, Any] = {
     "alignment.filter.window": 11,
     "alignment.filter.cfc_class": 60,
     "alignment.output_oversample": 4,
-    "alignment.elastic_dev_tol": 0.05,
+    "alignment.elastic_dev_tol": 0.015,  # 1.1
     "alignment.elastic_min_raw_points": 5,
     "objective.shortfall_penalty": 1.0,
     "solver.d3plot_frames": 20,

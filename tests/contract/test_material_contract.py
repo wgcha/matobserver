@@ -129,3 +129,19 @@ def test_m8_table_monotonic(make_plugin, plugin_name):
         s = [r.true_stress for r in m.to_neutral(th).table]
         viol += any(b < a for a, b in zip(s, s[1:]))
     assert viol == 0
+
+
+def test_m9_call_order(make_plugin):
+    """(1.1) bind → initial_guess → param_space 순서에서 initial 이 경계 안, 같은 순서면 결정적."""
+    spaces = []
+    for _ in range(2):
+        m = make_plugin({})
+        m.bind(REF)
+        g = m.initial_guess(HINTS)
+        sp = m.param_space()
+        for p in sp.params:
+            assert p.lower <= p.initial <= p.upper
+            if p.name in g:
+                assert p.lower <= g[p.name] <= p.upper
+        spaces.append(sp)
+    assert spaces[0] == spaces[1]

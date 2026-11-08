@@ -86,8 +86,9 @@ def test_step5_split_and_grid_counts():
     assert len(at.grid) == at.n_elastic + at.n_plastic
     assert at.grid[0] == at.X_l and at.grid[-1] == pytest.approx(at.X_u)
     assert at.grid[at.n_elastic - 1] == at.x_e and at.grid[at.n_elastic] > at.x_e
-    # x_e: 1.0−dev_tol 아래로 처음 떨어지는 x (k0=1000, xy=0.002, k2=100)
-    xe_true = (1000 * 0.002 - 100 * 0.002) / (0.95 * 1000 - 100)
+    # x_e: (1−dev_tol)·k0·x 아래로 처음 떨어지는 x (k0=1000, xy=0.002, k2=100)
+    tol = CFG.get("alignment.elastic_dev_tol")
+    xe_true = (1000 * 0.002 - 100 * 0.002) / ((1 - tol) * 1000 - 100)
     assert at.x_e >= xe_true and at.x_e - xe_true <= 2 * (x[1] - x[0])
     el = AL.prepare_test(x, y, RESP, CFG, has_plastic=False)
     assert el.n_plastic == 0 and el.x_e == el.X_u and el.n_elastic == 200

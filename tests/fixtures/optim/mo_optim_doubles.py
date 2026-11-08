@@ -319,7 +319,7 @@ def make_test(test_key: str, runs: Sequence[RunRecord], manifest: Mapping[str, A
 
 
 def make_spec(tests: Sequence[ResolvedTest], slots: Sequence[Mapping[str, Any]], *, mode: str = "A",
-              optimizer=("bo", {}), elastic_optimizer=("lsq", {}), solver=("surrogate_beam", {}),
+              optimizer=("lsq", {}), elastic_optimizer=("lsq", {}), solver=("surrogate_beam", {}),
               max_evaluations: int = 120, seed: int = 20261108, job_id: str = "cal_TEST") -> CalibrationSpec:
     req = {"tests": [t.test_key for t in tests], "slots": [dict(s) for s in slots], "opt": [optimizer[0], elastic_optimizer[0]],
            "seed": seed, "budget": max_evaluations}
@@ -436,6 +436,35 @@ class ExplicitBiasAdapter(_SB):
         return _Extracted(curves, ex.scalars, ex.field_max, {"ke_ie_ratio_max": self.ke})
 
 
+class CardAdapter(_SB):
+    """render_card 대역 (1.1 S13/O-17): card_format="lsdyna_k", 받은 카드를 텍스트로 기록."""
+
+    name: ClassVar[str] = "card_beam"
+    version: ClassVar[str] = "0.0.1"
+    RENDERED: list[dict[str, Any]] = []
+
+    def capabilities(self):
+        c = super().capabilities()
+        try:
+            from dataclasses import replace as _r
+            return _r(c, card_format="lsdyna_k")
+        except TypeError:  # core 1.0 SolverCapabilities(필드 없음): 속성으로 부착
+            class _C:
+                pass
+            o = _C()
+            o.__dict__.update(c.__dict__)
+            o.card_format = "lsdyna_k"
+            return o
+
+    def render_card(self, neutral, slot, options):
+        CardAdapter.RENDERED.append({"neutral": neutral, "slot": slot, "options": dict(options)})
+        rows = neutral.table or ()
+        lines = ["*KEYWORD", f"$ {options.get('title', '')}"] + [f"$ {c}" for c in options.get("header_comments", [])]
+        lines.append(f"$ E={neutral.elastic.youngs_modulus!r} rows={len(rows)} mid={slot.mid}")
+        lines += [f"{r.plastic_strain!r},{r.true_stress!r}" for r in rows]
+        return "\n".join(lines + ["*END"]) + "\n"
+
+
 class FrictionTestSpec(_BT):
     """비재료 변수 `mu` → 레시피 `fric` (R9, O-12)."""
 
@@ -454,4 +483,5 @@ def double_entries() -> list[PluginEntry]:
     return [PluginEntry("solver", "spy_beam", f"{m}:SpyAdapter", "0.0.1"),
             PluginEntry("solver", "flaky_beam", f"{m}:FlakyAdapter", "0.0.1"),
             PluginEntry("solver", "xc_beam", f"{m}:ExplicitBiasAdapter", "0.0.1"),
+            PluginEntry("solver", "card_beam", f"{m}:CardAdapter", "0.0.1"),
             PluginEntry("test_spec", "bending_mu", f"{m}:FrictionTestSpec", "0.0.1")]

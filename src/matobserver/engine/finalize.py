@@ -364,13 +364,7 @@ def finalize(*, prep: Prepared, ev: Evaluator, services: Any, results: list, the
     for so in slots_out:
         p = arts.write_json(f"{so['slot']}_card_blocks.json", so["card_blocks"])
         arts.add(p, "card_blocks_json", slot=so["slot"])
-        for cid, d in best_dirs.items():
-            k = d / f"mo_mat_{so['slot']}.k"
-            if k.is_file():
-                dst = arts.root / f"{so['slot']}_card.k"
-                shutil.copyfile(k, dst)
-                arts.add(dst, "card_lsdyna", slot=so["slot"])
-                break
+        _render_card(arts, ev, prep, so, final_cards[so["slot"]], warnings)
     for tc in prep.tests:
         for cc in tc.cases:
             co = final_rec.cases.get(cc.case_id)
@@ -419,6 +413,39 @@ def finalize(*, prep: Prepared, ev: Evaluator, services: Any, results: list, the
         "artifacts": arts.refs,
     }
     return clean(result)
+
+
+def _render_card(arts: Artifacts, ev: Evaluator, prep: Prepared, so: Mapping[str, Any], card: NeutralMaterial,
+                 warnings: list[dict[str, Any]]) -> None:
+    """(1.1, result.md §5) card_lsdyna = 결과 NeutralMaterial(절단·외삽 반영)을 SolverAdapter.render_card로 재렌더링.
+    어댑터 card_format이 None이면 생략. 최적점 실행 폴더 카드 복사 금지."""
+    fmt = getattr(ev.adapter.capabilities(), "card_format", None)
+    render = getattr(ev.adapter, "render_card", None)
+    if fmt is None or render is None:
+        return
+    from .context import slot_bindings
+
+    binding = None
+    for tc in prep.tests:
+        bs = slot_bindings(tc.manifest, [so["slot"]])
+        if bs:
+            binding = bs[0]
+            break
+    if binding is None:
+        return
+    opts = {"title": f"matobserver {prep.spec.job_id} slot {so['slot']}",
+            "header_comments": [f"job_id={prep.spec.job_id}", f"slot={so['slot']}",
+                                f"material_model={so['material_model']['name']}@{so['material_model']['version']}",
+                                "source=result card_blocks (valid-range truncated)", "units=mm-N-s-tonne"]}
+    try:
+        text = render(card, binding, opts)
+    except NotImplementedError:
+        return
+    except Exception:  # 2차 산출물 실패는 결과 확정을 막지 않는다(카드 없이 진행)
+        return
+    ext = ".k" if fmt == "lsdyna_k" else ".txt"
+    p = arts.write_text(f"{so['slot']}_card{ext}", text)
+    arts.add(p, "card_lsdyna" if fmt == "lsdyna_k" else f"card_{fmt}", slot=so["slot"])
 
 
 def _dedupe(ws: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -665,15 +692,10 @@ def _traceability(prep: Prepared, ev: Evaluator, results: list, services: Any) -
 def _explicit_check(prep: Prepared, ev: Evaluator, services: Any, rec: EvalRecord, cards: Mapping[str, NeutralMaterial],
                     arts: Artifacts, warnings: list[dict[str, Any]]) -> dict[str, Any]:
     cfg = services.config
-    # CalibrationSpec(core, 계약 §4.1)에는 explicit_check 필드가 없다: 요청값은 Backend가 잡별 Config 덮어쓰기
-    # (verify.explicit_check.*)로 넘기거나, 이후 MINOR에서 추가될 spec.explicit_check 속성을 읽는다.
-    req = dict(getattr(prep.spec, "explicit_check", None) or {})
-    jo = getattr(services, "job_options", None)  # Backend 통로: 요청 해석값 services.job_options["explicit_check"]
-    if not req and jo:
-        try:
-            req = dict((jo.get("explicit_check") if hasattr(jo, "get") else None) or {})
-        except Exception:
-            req = {}
+    # (1.1) 우선순위: CalibrationSpec.explicit_check → services.job_options["explicit_check"] → 설정 verify.explicit_check.*
+    from .context import job_option
+
+    req = dict(job_option(prep.spec, services, "explicit_check") or {})
     enabled = bool(req.get("enabled", cfg.get("verify.explicit_check.enabled")))
     if not enabled:
         return {"enabled": False}

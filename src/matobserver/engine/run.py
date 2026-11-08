@@ -206,7 +206,7 @@ def run_calibration(spec: CalibrationSpec, services: Any) -> Mapping[str, Any]:
             continue
         later = len(stages) - si - 1
         cap = remaining if later == 0 else max(1, min(remaining - later, int(math.ceil(0.3 * n_budget))))
-        opt_spec = spec.elastic_optimizer if st == "elastic" else spec.optimizer
+        opt_spec = _stage_optimizer(spec, cfg, st)
         services.progress(st)
         sr = run_stage(st, sub, opt_spec, theta, cap, ev, services, spec, t_start, wall, si == 0, used, n_budget)
         used += sr.evaluations
@@ -229,6 +229,24 @@ def run_calibration(spec: CalibrationSpec, services: Any) -> Mapping[str, Any]:
     return finalize(prep=prep, ev=ev, services=services, results=results, theta=theta, final_rec=final_rec,
                     post_fit=post, flags=flags, diag_warnings=dwarn, diag_raw=diag_raw, n_budget=n_budget,
                     t_start=t_start, wall=wall, created_at=created_at)
+
+
+def _stage_optimizer(spec: CalibrationSpec, cfg: Any, stage: str) -> tuple[str, Mapping[str, Any]]:
+    """요청 최적화기(이름이 있으면) → (1.1) engine.stages.{stage}.optimizer → (1.0 별칭) engine.{stage}_stage.optimizer → lsq."""
+    from .context import cfg_get
+
+    req = spec.elastic_optimizer if stage == "elastic" else spec.optimizer
+    if req and req[0]:
+        return req[0], dict(req[1] or {})
+    key = "elastic" if stage == "elastic" else "plastic"
+    try:
+        new_in_table = f"engine.stages.{key}.optimizer" in cfg
+    except Exception:
+        new_in_table = False
+    name = cfg_get(cfg, f"engine.stages.{key}.optimizer") if new_in_table else None
+    if not name:
+        name = cfg_get(cfg, f"engine.{key}_stage.optimizer") or cfg_get(cfg, f"engine.stages.{key}.optimizer") or "lsq"
+    return str(name), {}
 
 
 def _final_materials(prep: Prepared, theta: Mapping[str, float]):
