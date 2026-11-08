@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "matobserver"
+version = "0.1.0"
+description = "MatNexus용 재료 역공학(FEMU) 엔진 — 시험 곡선에 LS-DYNA 해석을 맞춰 재료 카드를 식별한다."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # ---- core (Impl-Backend) ----
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    # ---- 아래 자리는 각 소유자가 PR로 추가를 요청한다 (module-boundaries.md §1: 의존성은 각자 요청, 버전 고정은 이 파일) ----
+    # Impl-Backend: fastapi, uvicorn, pydantic, httpx (api/, jobs/, matnexus/ ...)
+    # Impl-Mesh:    gmsh (mesh/)
+    # Impl-Optim:   scipy, scikit-learn 또는 botorch (optimizers/, engine/)
+    # Impl-Solver:  binout 리더 (예: lasso-python) (solvers/lsdyna/, deck/)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# lsdyna 마커 = 실제 LS-DYNA 실행이 필요한 시험. 기본 실행에서 제외한다 (포함하려면 `pytest -m lsdyna`).
+# importlib 모드: tests/unit/<package>/ 아래 같은 파일명이 있어도 충돌하지 않는다.
+addopts = "-m 'not lsdyna' --import-mode=importlib --strict-markers"
+markers = [
+    "lsdyna: LS-DYNA 실행 파일/라이선스가 필요한 시험 (기본 실행에서 제외)",
+]

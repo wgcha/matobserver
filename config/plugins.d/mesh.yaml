@@ -1,0 +1,4 @@
+# 소유자: Impl-Mesh — geometry_mesher 플러그인 항목만 추가한다 (box, layered_box, stp, jig.bending3p_rollers).
+# 형식: docs/contracts/plugins.md §2. 다른 소유자의 항목을 이 파일에 쓰지 않는다.
+schema_version: "1.0"
+plugins: []

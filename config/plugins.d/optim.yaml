@@ -1,0 +1,4 @@
+# 소유자: Impl-Optim — optimizer, material_model, test_spec, 그리고 solver `surrogate_beam` 항목을 추가한다.
+# 형식: docs/contracts/plugins.md §2.
+schema_version: "1.0"
+plugins: []

@@ -1,0 +1,358 @@
+# matobserver 설정 예시 — module-boundaries.md §6 의 전 키와 기본값 (소유: Impl-Backend)
+#
+# 사용: 이 파일을 config/matobserver.yaml 로 복사해 환경에 맞게 고친다. (MATOBSERVER_CONFIG 로 경로 지정 가능)
+# 환경변수 덮어쓰기: MATOBSERVER__<SECTION>__<KEY> (대문자, 하위 경로는 `__`), 예) MATOBSERVER__SOLVER__LSDYNA__NCPU=8
+# 비밀값은 `env:VAR` 참조 가능 (예: matnexus.token: env:MATNEXUS_TOKEN).
+# 단위: Python 객체·설정 수치는 SI(m, N, Pa, s, kg/m^3). 접미사 *_s 초, *_m 미터, *_pa 파스칼, *_kg_m3 kg/m^3.
+# 이 파일의 값은 코드 기본값(src/matobserver/core/config.py KEY_SPECS)과 같다 — 단위 테스트가 일치를 검사한다.
+# "미결"/"계약 값 없음" 표시 키는 계약에 확정값이 없어 자리표시/초기값을 둔 것이다.
+
+
+paths:
+  # module-boundaries.md §4.5 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  data_dir: ./data
+  # module-boundaries.md §4.5: 작업 폴더 {work_dir}/{job_id}/ (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  work_dir: ./data/work
+
+jobstore:
+  # api.md §5 SQLite JobStore (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  sqlite_path: ./data/jobs.sqlite
+
+api:
+  # api.md (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  host: 127.0.0.1
+  # api.md (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  port: 8000
+  # api.md §1 페이지 기본 limit
+  page_default_limit: 50
+  # api.md §1 페이지 최대 limit
+  page_max_limit: 500
+  # api.md §4.2 Idempotency-Key 보존(s)
+  idempotency_ttl_s: 86400
+  # api.md §4.2 tests 1..N
+  max_tests_per_job: 8
+  # api.md §4.2 시험당 run 1..N
+  max_runs_per_test: 20
+  # api.md §4.3 slots 1..N
+  max_slots: 8
+
+auth:
+  # api.md §2: [{name, sha256}] (평문 저장 금지)
+  service_tokens: []
+  # api.md §2: [{name, sha256}] (서비스 범위 + /v1/admin/*)
+  admin_tokens: []
+
+files:
+  # api.md §4.1: 업로드 파일 최대 크기(기본 200 MiB)
+  max_bytes: 209715200
+
+artifacts:
+  # api.md §6: null=무기한
+  retention_days: null
+
+matnexus:
+  # api.md §2 MatNexus 주소 (환경별 필수 입력)
+  base_url: null
+  # api.md §2: 서비스 계정 PAT, `env:VAR` 참조 형식 허용
+  token: env:MATNEXUS_TOKEN
+  # api.md §2 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  timeout_s: 30.0
+  # result.md §4.11 예시 traceability.matnexus.curve_max_points
+  curve_max_points: 5000
+
+worker:
+  # api.md §4.12: 워커 취소 폴링(s)
+  cancel_poll_s: 5
+
+registry:
+  # plugins.md §2: 아래 *.yaml을 이름순으로 모두 읽는다
+  paths: [config/plugins.d]
+
+recipes:
+  # recipe.md §2 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  store_dir: ./data/recipes
+  # recipe.md §2/api.md §8.1: 번들 zip 최대(50 MiB)
+  max_bundle_bytes: 52428800
+  # recipe.md §2: 해제 총크기 상한(200 MiB)
+  max_unpacked_bytes: 209715200
+  # recipe.md §2: 파일 수 상한
+  max_files: 500
+
+recipe_verify:
+  # recipe.md §7.2 VERIFY_RESPONSE
+  min_points: 20
+  # recipe.md §7.2 VERIFY_UNITS
+  unit_ratio_tol: 1.5
+  # recipe.md §7.2 VERIFY_PENETRATION
+  max_initial_penetration_m: 1.0e-06
+  # recipe.md §7.2 VERIFY_PENETRATION
+  max_initial_force_ratio: 0.01
+  # recipe.md §7.2 VERIFY_MESH_CONVERGENCE
+  mesh_convergence_tol: 0.02
+  # recipe.md §7.2 VERIFY_REFERENCE_CURVE
+  reference_curve_tol: 0.05
+
+cli:
+  # recipe.md §6 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  server_url: http://127.0.0.1:8000
+  # recipe.md §6 --wait 폴링 간격 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  poll_interval_s: 5.0
+
+solver:
+  # plugins.md §4.2/testspec.md §8: 해석 1회 상한(s). 미결(U-2): 자리표시값, plan 해석 예산 결정 대기
+  run_timeout_s: 3600
+  # plugins.md §5.2 S4: 강제 종료 유예(s) (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  kill_grace_s: 10.0
+  # plugins.md §4.2: CancelToken 확인 간격(s) (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  poll_interval_s: 1.0
+  # plugins.md §4.2 cleanup 매핑표  [best | all | none]
+  keep_d3plot: best
+  # plugins.md §4.2: true면 매핑표와 무관하게 모두 보존(디버그)
+  keep_all_files: false
+  # testspec.md §5 7단계: dt_plot = mo_tend / d3plot_frames
+  d3plot_frames: 20
+  implicit:
+    # testspec.md §10.4 mo_tend (implicit)
+    t_end_s: 1.0
+  explicit:
+    # testspec.md §10.4 mo_tend (explicit)
+    loading_velocity_m_s: 0.5
+    # recipe.md §7.2 WARN_KE_RATIO / testspec.md §11
+    max_ke_ratio: 0.05
+  license_retry:
+    # plugins.md §4.2: 라이선스 재시도 간격(s) (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    interval_s: 30.0
+    # api.md §7.3 LICENSE_TIMEOUT: 대기 상한(s) (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    max_wait_s: 1800.0
+  lsdyna:
+    # module-boundaries.md §6: 인자 템플릿 리스트. 치환 키 {script} {main} {ncpu}
+    batch_command: ['{script}', -i, '{main}', -n, '{ncpu}']
+    # U-1 미결: 사내 배치 스크립트 경로 (환경별 필수 입력)
+    script: null
+    # module-boundaries.md §6 smp|mpp  [smp | mpp]
+    mode: smp
+    # module-boundaries.md §6: 기본 4
+    ncpu: 4
+    # result.md §4.11 예시 solver.precision (계약 값 없음 — 초기값, 환경/운영에서 조정; single|double)  [single | double]
+    precision: double
+    # 종료 판정 정규식/문구. 구조 {normal: [...], error: [...]}는 해석 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    termination_patterns: {normal: [N o r m a l    t e r m i n a t i o n, Normal termination], error: [E r r o r    t e r m i n a t i o n, Error termination]}
+    # 라이선스 오류 로그 문구 (대소문자 구분) (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    license_error_patterns: [license, LICENSE, lmgrd, FlexNet, Unable to checkout]
+    # d3hsp/messag에서 버전 문자열을 뽑는 정규식(첫 그룹) (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    version_pattern: (R\d+(?:\.\d+)*\S*(?:\s+(?:SMP|MPP))?(?:\s+[sd])?)
+
+mesh:
+  # plugins.md §4.4 MeshOptions.max_elements (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  max_elements: 200000
+  # plugins.md §5.4 G2
+  min_scaled_jacobian: 0.2
+  # plugins.md §5.4 G2
+  max_aspect_ratio: 10.0
+  # plugins.md §5.4 G1
+  volume_rel_tol_parametric: 1.0e-09
+  # plugins.md §5.4 G1
+  volume_rel_tol_stp: 0.01
+  # plugins.md §4.4 결정성: 스레드 1 고정
+  gmsh_threads: 1
+  jig:
+    # module-boundaries.md §2 지그 *MAT_RIGID E (Pa)
+    rigid_E_pa: 210000000000.0
+    # module-boundaries.md §2 지그 *MAT_RIGID PR
+    rigid_poisson: 0.3
+    # module-boundaries.md §2 지그 *MAT_RIGID RO (kg/m^3)
+    rigid_density_kg_m3: 7850.0
+
+geometry:
+  # api.md §4.4 layered_box 두께 합 상대오차
+  layer_sum_rel_tol: 0.001
+
+engine:
+  # api.md §4.2 solver 기본
+  default_solver: lsdyna
+  # api.md §4.3 plasticity_mode 기본. U-1(plugins.md) 미결 — 현재 계수 모드 유지  [coeff | table]
+  default_plasticity_mode: coeff
+  # result.md §4.11 예시 seed (계약 값 없음 — 예시값 사용)
+  default_seed: 20261108
+  elastic_stage:
+    # plugins.md P-5: 탄성 단계 기본 최적화기
+    optimizer: lsq
+  plastic_stage:
+    # plan: BO 기본 (plugins.md §4.1)
+    optimizer: bo
+  stagnation:
+    # plugins.md §4.1: 연속 k회 정체 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    k: 5
+    # plugins.md §4.1: 상대 개선 임계 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+    rel_tol: 0.001
+  # api.md §7.3 ALL_INITIAL_RUNS_FAILED
+  abort_if_initial_all_failed: true
+
+budget:
+  # api.md §4.6. 미결(U-2): 자리표시값, plan 해석 예산 결정 대기
+  default_max_evaluations: 120
+  # api.md §4.6 BUDGET_EXCEEDS_LIMIT. 미결(U-2): 자리표시값, plan 해석 예산 결정 대기
+  max_evaluations_limit: 300
+  # api.md §4.6. 미결(U-2): 자리표시값, plan 해석 예산 결정 대기
+  default_max_wall_time_s: 172800
+
+alignment:
+  # testspec.md §5 1단계 (d)
+  unload_tol_rel: 0.005
+  # testspec.md §5 1단계 (e)
+  dedup_tol_rel: 1.0e-09
+  # testspec.md §5 1단계 / CURVE_TOO_FEW_POINTS
+  min_raw_points: 20
+  # testspec.md §5 1단계 / CURVE_NOT_MONOTONIC
+  min_loading_fraction: 0.3
+  # testspec.md §5 3단계
+  contact_force_ratio: 0.02
+  # testspec.md §5 3단계
+  toe_correction: true
+  # testspec.md §5 3단계 (G4 조정 항목 T-7)
+  toe_fit_lo: 0.1
+  # testspec.md §5 3단계 (G4 조정 항목 T-7)
+  toe_fit_hi: 0.4
+  # testspec.md §5 3단계 / CURVE_NO_ELASTIC_REGION
+  toe_fit_min_points: 5
+  # testspec.md §5 3단계 (n차 예약, null)
+  time_shift_bounds_s: null
+  # testspec.md §5 4단계
+  failure_cut: true
+  # testspec.md §5 4단계
+  failure_drop_ratio: 0.3
+  # testspec.md §5 5단계 N
+  grid_points: 200
+  # testspec.md §5 5단계
+  elastic_min_points: 30
+  # testspec.md §5 5단계
+  plastic_min_points: 30
+  filter:
+    # testspec.md §5 6단계: 준정적 none (고속 cfc는 n차)  [none | moving_average | cfc]
+    kind: none
+    # testspec.md §5 6단계
+    presample_points: 2000
+    # testspec.md §5 6단계
+    window: 11
+    # testspec.md §5 6단계 (SAE J211 CFC)
+    cfc_class: 60
+  # testspec.md §5 7단계 k
+  output_oversample: 4
+  # testspec.md §5.1
+  elastic_dev_tol: 0.05
+  # testspec.md §5.1 / CURVE_NO_ELASTIC_REGION
+  elastic_min_raw_points: 5
+
+objective:
+  # testspec.md §8: 구간 가중 w_k
+  region_weights: {elastic: 1.0, plastic: 1.0}
+  # testspec.md §5 8단계 / §8 λ_s
+  shortfall_penalty: 1.0
+  # testspec.md §8 해석 실패 J
+  failed_run_J: 10.0
+  # testspec.md §8 스칼라 하한
+  scalar_floor: 1.0e-12
+  # testspec.md §11 (n차 예약): l2 | iso18571  [l2 | iso18571]
+  similarity: l2
+
+cases:
+  # testspec.md §9.1
+  dimension_merge_rel_tol: 0.01
+
+identifiability:
+  # testspec.md §9.2 / T-5 (reject|warn)  [reject | warn]
+  precheck_mode: reject
+  # testspec.md §9.2
+  min_points_per_param: 5
+  # testspec.md §9.3
+  post_fit: true
+  # testspec.md §9.3 h
+  fd_step_rel: 0.02
+  # testspec.md §9.3
+  max_extra_evals: 30
+  # testspec.md §9.3
+  corr_threshold: 0.95
+  # testspec.md §9.3
+  min_sensitivity: 0.001
+  # testspec.md §9.3
+  max_condition: 100000000.0
+
+testspec:
+  bending:
+    # testspec.md §6 (결정 2026-11-08: 크로스헤드 기본)
+    prefer_deflection: false
+    # testspec.md §10.2 GEOMETRY_DIMENSION_INVALID
+    min_span_ratio: 4.0
+    # testspec.md §10.2 BEAM_THEORY_APPROXIMATE
+    beam_theory_span_ratio: 10.0
+    # testspec.md §10.4 mo_dend
+    overtravel_ratio: 0.05
+    # testspec.md §10.5 eps_p_max0 하한
+    min_eps_p0: 0.01
+    # testspec.md §10.6
+    rate_from_time_channel: true
+
+material:
+  # api.md §4.3 DENSITY_DEFAULTED (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  default_density_kg_m3: 7850.0
+  # plugins.md §4.3: [lower, upper], log
+  default_E_range_pa: [1000000.0, 1000000000000.0]
+  # plugins.md §4.3: [lower, upper], log
+  default_sigma_y_range_pa: [100000.0, 5000000000.0]
+  mat024:
+    # plugins.md §4.3 옵션 max_strain
+    max_strain: 0.2
+  mat024_coeff:
+    # plugins.md §4.3 / U-1  [swift | voce | swift_voce]
+    default_law: swift
+  mat024_table:
+    # plugins.md §4.3 옵션 table_nodes
+    nodes: 8
+
+result:
+  # result.md §3.2 / plugins.md §4.3
+  table_points: 50
+  # result.md §3.2  [geometric | linear]
+  table_spacing: geometric
+  # result.md §3.2
+  table_first_step: 0.0001
+  # result.md §3.2: null이면 행 추가 없음
+  extrapolate_to_strain: null
+  # result.md §3.2  [last_slope | hardening_law]
+  extrapolation_method: last_slope
+  # result.md §4.2 PARAM_AT_BOUND
+  at_bound_tol: 0.01
+
+uncertainty:
+  # result.md §4.4
+  per_specimen_refit: false
+  # result.md §4.4: run별 재식별 예산 (계약 값 없음 — 초기값, 환경/운영에서 조정)
+  refit_max_evaluations: 30
+
+verify:
+  # result.md §4.9
+  roundtrip_enabled: true
+  # result.md §4.9
+  roundtrip_tol: 0.01
+  # result.md §4.9: null = εp_valid
+  roundtrip_strain: null
+  explicit_check:
+    # testspec.md §8.1
+    enabled: false
+    # testspec.md §8.1 요소 정식화
+    elform: 1
+    hourglass:
+      # testspec.md §8.1
+      ihq: 6
+      # testspec.md §8.1
+      qm: 0.1
+    # testspec.md §8.1
+    loading_velocity_m_s: 0.5
+    # testspec.md §8.1
+    max_ke_ratio: 0.05
+    # testspec.md §8.1
+    max_region_error: 0.05
+    # testspec.md §8.1
+    max_peak_rel_diff: 0.05
+    # testspec.md §8.1: null → solver.run_timeout_s
+    run_timeout_s: null

@@ -1,0 +1,4 @@
+# 소유자: Impl-Solver — solver 플러그인 `lsdyna` 항목만 추가한다.
+# 형식: docs/contracts/plugins.md §2. (surrogate_beam은 optim.yaml, Impl-Optim 소유)
+schema_version: "1.0"
+plugins: []
