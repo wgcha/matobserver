@@ -1,0 +1,23 @@
+{
+ "id": "6f1c2a3b-0000-4000-8000-000000000001",
+ "code": "TR-0001",
+ "status": "parsed",
+ "parse_error": null,
+ "test_type_key": "flexural",
+ "channels": [
+  "time",
+  "displacement",
+  "force"
+ ],
+ "conditions": {
+  "temperature": 296.15,
+  "test_speed": 0.00015
+ },
+ "instrument": "UTM-01",
+ "specimen_id": "5a5a5a5a-0000-4000-8000-000000000001",
+ "material_id": "3c3c3c3c-0000-4000-8000-000000000001",
+ "material_name": "DP600",
+ "source_sha256": "abababababababababababababababababababababababababababababababab",
+ "curves": [],
+ "created_at": "2026-11-01T00:00:00Z"
+}

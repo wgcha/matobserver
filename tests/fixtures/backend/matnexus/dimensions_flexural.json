@@ -1,0 +1,55 @@
+{
+ "standard": "ISO 178",
+ "cross_section": "rect",
+ "cross_section_label": "직사각형",
+ "area": 4e-05,
+ "area_problem": null,
+ "fields": [
+  {
+   "key": "width",
+   "dimension": "length",
+   "label": "폭",
+   "measured": 0.0101,
+   "nominal": 0.01,
+   "inherited": false,
+   "is_required": true
+  },
+  {
+   "key": "thickness",
+   "dimension": "length",
+   "label": "두께",
+   "measured": null,
+   "nominal": 0.004,
+   "inherited": false,
+   "is_required": true
+  },
+  {
+   "key": "span",
+   "dimension": "length",
+   "label": "지점 간 거리",
+   "measured": null,
+   "nominal": 0.064,
+   "inherited": false,
+   "is_required": true
+  },
+  {
+   "key": "total_length",
+   "dimension": "length",
+   "label": "전장",
+   "measured": 0.08,
+   "nominal": 0.08,
+   "inherited": false,
+   "is_required": false
+  },
+  {
+   "key": "load_span",
+   "dimension": "length",
+   "label": "하중 지점 간 거리",
+   "measured": null,
+   "nominal": null,
+   "inherited": false,
+   "is_required": false
+  }
+ ],
+ "warnings": []
+}

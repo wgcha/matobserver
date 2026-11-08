@@ -1,0 +1,13 @@
+{
+ "id": "6f1c2a3b-0000-4000-8000-0000000000ff",
+ "code": "TR-0099",
+ "status": "failed",
+ "parse_error": "unexpected header",
+ "test_type_key": "flexural",
+ "channels": [],
+ "conditions": {},
+ "instrument": null,
+ "specimen_id": null,
+ "material_id": null,
+ "source_sha256": null
+}

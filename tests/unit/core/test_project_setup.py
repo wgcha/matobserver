@@ -31,11 +31,12 @@ def test_lsdyna_marker_registered(pytestconfig: pytest.Config):
 
 
 @pytest.mark.parametrize("pkg", PACKAGES)
-def test_other_owner_packages_exist_and_are_empty(pkg: str):
+def test_other_owner_packages_exist_and_are_importable(pkg: str):
+    """각 소유자 패키지가 존재하고 import 된다. `__init__.py` 내용은 각 소유자 범위라 비어 있어야 한다고 강제하지 않는다
+    (골격 단계에는 비어 있었지만 소유자가 구현을 채우면 달라진다)."""
     importlib.import_module(f"matobserver.{pkg}")
     init = REPO / "src" / "matobserver" / Path(*pkg.split(".")) / "__init__.py"
     assert init.is_file()
-    assert init.read_text(encoding="utf-8").strip() == ""   # 내용은 각 소유자 범위
 
 
 def test_core_modules_importable():

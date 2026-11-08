@@ -12,12 +12,20 @@ dependencies = [
     # ---- core (Impl-Backend) ----
     "numpy>=1.26",
     "pyyaml>=6.0",
+    # ---- Impl-Backend (api/, jobs/, matnexus/, recipes/, cli.py) ----
+    "fastapi>=0.110",
+    "uvicorn>=0.30",
+    "pydantic>=2.6",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",  # POST /v1/files, POST /v1/admin/recipes (multipart)
     # ---- 아래 자리는 각 소유자가 PR로 추가를 요청한다 (module-boundaries.md §1: 의존성은 각자 요청, 버전 고정은 이 파일) ----
-    # Impl-Backend: fastapi, uvicorn, pydantic, httpx (api/, jobs/, matnexus/ ...)
     # Impl-Mesh:    gmsh (mesh/)
     # Impl-Optim:   scipy, scikit-learn 또는 botorch (optimizers/, engine/)
     # Impl-Solver:  binout 리더 (예: lasso-python) (solvers/lsdyna/, deck/)
 ]
+
+[project.scripts]
+matobserver = "matobserver.cli:main"
 
 [project.optional-dependencies]
 dev = [
