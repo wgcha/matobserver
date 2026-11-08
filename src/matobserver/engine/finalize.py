@@ -140,6 +140,42 @@ def valid_ranges(prep: Prepared, rec: EvalRecord) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _valid_range_record(prep: Prepared, ev: Evaluator, theta: Mapping[str, float], rec: EvalRecord, cfg: Any) -> EvalRecord:
+    """유효 범위(result.md §2 valid_range)는 비교 구간 끝 X_u 시점의 field_max 여야 한다. 해석은 overtravel 포함
+    mo_dend까지 가므로, 최적 θ를 mo_dend = X_u로 1회 더 풀어(예산 밖, history stage=diagnostics) 그 field_max 를 쓴다."""
+    if not any(m.table is not None for m in rec.materials.values()):
+        return rec
+    from dataclasses import replace as _r
+
+    saved = {}
+    try:
+        for tc in prep.tests:
+            for cc in tc.cases:
+                sc = cc.sim_case
+                if sc is None or cc.X_u <= 0:
+                    continue
+                saved[cc.case_id] = (cc, sc)
+                eng = {}
+                for mode, ep in sc.engine_params_si.items():
+                    ep = dict(ep)
+                    f = cc.X_u / float(ep["mo_dend"])
+                    ep["mo_dend"] = float(cc.X_u)
+                    if mode == "explicit":
+                        ep["mo_tend"] = float(ep["mo_tend"]) * f
+                    ep.update(AL.output_intervals(cc.dx_min, ep["mo_dend"], ep["mo_tend"], cfg))
+                    eng[mode] = ep
+                cc.sim_case = _r(sc, engine_params_si=eng)
+        if not saved:
+            return rec
+        vr_rec = ev.evaluate(theta, "final", elastic_only=False, history_stage="diagnostics")
+        ev.finish(vr_rec, is_best=False)
+        ok = all(c.extracted is not None and c.extracted.field_max for c in vr_rec.cases.values())
+        return vr_rec if ok else rec
+    finally:
+        for cc, sc in saved.values():
+            cc.sim_case = sc
+
+
 def _is_coeff(sc: SlotCtx, local: Mapping[str, float]) -> bool:
     try:
         return (sc.model.describe(local).get("hardening") or {}).get("law") is not None
@@ -246,7 +282,7 @@ def finalize(*, prep: Prepared, ev: Evaluator, services: Any, results: list, the
         best_dirs[cid] = dst
 
     # ---- 슬롯 결과 ----
-    vr = valid_ranges(prep, final_rec)
+    vr = valid_ranges(prep, _valid_range_record(prep, ev, theta, final_rec, cfg))
     slots_out: list[dict[str, Any]] = []
     final_cards: dict[str, NeutralMaterial] = {}
     for sc in prep.slots:

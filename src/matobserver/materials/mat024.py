@@ -174,6 +174,10 @@ class Mat024Table(_Mat024Common):
             raise ValueError("mat024_table: table_nodes must be >= 2")
         self.node_spacing = str(self.options.get("node_spacing", "geometric"))
         self.max_strain = float(self.options.get("max_strain", 0.2))
+        self._max_strain_auto = bool(self.options.get("max_strain_auto", False))
+        self._build_nodes()
+
+    def _build_nodes(self) -> None:
         if self.node_spacing == "explicit":
             nodes = [float(v) for v in self.options.get("strain_nodes") or []]
             if len(nodes) < 2 or nodes[0] != 0.0 or any(b <= a for a, b in zip(nodes, nodes[1:])):
@@ -181,19 +185,34 @@ class Mat024Table(_Mat024Common):
             self.nodes = np.asarray(nodes)
             self.table_nodes = len(nodes)
             self.max_strain = nodes[-1]
+            return
+        m = self.table_nodes - 1
+        first = float(self.options.get("first_node_strain") or 0.002)  # 1.1 기본 0.002
+        if first >= self.max_strain:
+            first = self.max_strain / 100.0
+        if self.node_spacing == "linear" or m == 1:
+            self.nodes = np.linspace(0.0, self.max_strain, m + 1)
+        elif self.node_spacing == "geometric":
+            tail = np.geomspace(first, self.max_strain, m)
+            tail[-1] = self.max_strain
+            self.nodes = np.concatenate([[0.0], tail])
         else:
-            m = self.table_nodes - 1
-            first = float(self.options.get("first_node_strain") or 0.002)  # 1.1 기본 0.002
-            if first >= self.max_strain:
-                first = self.max_strain / 100.0
-            if self.node_spacing == "linear" or m == 1:
-                self.nodes = np.linspace(0.0, self.max_strain, m + 1)
-            elif self.node_spacing == "geometric":
-                tail = np.geomspace(first, self.max_strain, m)
-                tail[-1] = self.max_strain
-                self.nodes = np.concatenate([[0.0], tail])
-            else:
-                raise ValueError(f"mat024_table: node_spacing must be geometric|linear|explicit, got {self.node_spacing!r}")
+            raise ValueError(f"mat024_table: node_spacing must be geometric|linear|explicit, got {self.node_spacing!r}")
+
+    def initial_guess(self, hints):
+        """힌트 저장 후, `max_strain_auto`(엔진이 요청에 max_strain이 없을 때 켬)면 노드 상한을 사전 예상 유효 범위로 줄인다:
+        εp_hi = eps_p_max0 + sigma_y0/E0 (= 외층 공칭 전변형률 6hX_u/L², 소성변형률 상한). 노드가 데이터 범위를 크게 넘으면
+        비식별(검증 G2)."""
+        self._hints = {k: float(v) for k, v in (hints or {}).items()
+                       if k in ("E0", "sigma_y0", "eps_p_max0") and v is not None and float(v) > 0}
+        if self._max_strain_auto and self.node_spacing != "explicit" and "eps_p_max0" in self._hints:
+            hi = self._hints["eps_p_max0"]
+            if "sigma_y0" in self._hints and "E0" in self._hints:
+                hi += self._hints["sigma_y0"] / self._hints["E0"]
+            hi = max(hi, 2.0 * float(self.options.get("first_node_strain") or 0.002))
+            self.max_strain = min(float(self.options.get("max_strain", 0.2)), hi)
+            self._build_nodes()
+        return {p.name: float(p.initial) for p in self.param_space().params if p.initial is not None}
 
     @property
     def m(self) -> int:
@@ -227,6 +246,19 @@ class Mat024Table(_Mat024Common):
         sig = self.node_stresses(theta_local)
         rows = tuple(TableRow(float(e), float(s)) for e, s in zip(self.nodes, sig))
         return NeutralMaterial(elastic=self.elastic_block(float(theta_local["E"])), table=rows)
+
+    def regularization_residuals(self, theta_local: Mapping[str, float]) -> np.ndarray:
+        """인접 구간 기울기 변화 정칙화 잔차 (선택 기능, 엔진이 getattr 로 찾아 최적화기 잔차에만 붙인다 — J 정의 불변).
+
+        r_i = w·(k_{i+1} − k_i)·εp_max/σ_ref,  k_i = (σ_{i+1}−σ_i)/(εp_{i+1}−εp_i). w = 옵션 `smoothing`(기본 0.01, 0이면 끔).
+        가까운 노드(특히 εp=0 항복 노드와 첫 노드) 사이의 상호 보상(비식별)을 억제한다."""
+        w = float(self.options.get("smoothing", 0.01))
+        if w <= 0 or self.m < 2:
+            return np.array([])
+        sig = self.node_stresses(theta_local)
+        k = np.diff(sig) / np.diff(self.nodes)
+        ref = max(float(theta_local["sigma_y"]), 1.0)
+        return w * np.diff(k) * float(self.nodes[-1]) / ref
 
     def describe(self, theta_local: Mapping[str, float]) -> Mapping[str, Any]:
         return {"hardening": {"law": None, "coefficients": None}, "node_strains": [float(v) for v in self.nodes],

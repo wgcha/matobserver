@@ -83,7 +83,8 @@ def run_stage(stage: str, space: ParamSpace, opt_spec: tuple[str, Mapping[str, A
     opt = reg.create("optimizer", oname, dict(opt_spec[1] or {}))
     names = space.names()
     opt.setup(space, int(spec.seed), [{n: float(base_theta[n]) for n in names}])
-    elastic_only = stage == "elastic"
+    # R8: plastic 변수가 있을 때만 탄성 전용 카드. 소성 변수가 전부 고정(또는 없음)이면 고정 카드 전체(탄소성 포함)로 E 피팅
+    elastic_only = stage == "elastic" and ev.prep.has_plastic
     k = int(cfg.get("engine.stagnation.k"))
     rel_tol = float(cfg.get("engine.stagnation.rel_tol"))
     window = max(1, k * (len(names) + 1))
@@ -166,7 +167,8 @@ def _diagnostics(prep: Prepared, ev: Evaluator, stage_results: list[StageResult]
                 v2 = min(v + step, p.upper)
                 dl = (v2 - v) / max(step, 1e-300) * h  # 0 근처: 범위 기준 상대 스텝(h·range)을 ln 스텝 h로 간주
             th = {**base, name: v2}
-            rec = ev.evaluate(th, sr.stage, elastic_only=(sr.stage == "elastic"), history_stage="diagnostics")
+            rec = ev.evaluate(th, sr.stage, elastic_only=(sr.stage == "elastic" and prep.has_plastic),
+                              history_stage="diagnostics")
             ev.finish(rec, is_best=False)
             used += 1
             if len(rec.residual) == len(r0) and dl != 0:
@@ -218,7 +220,8 @@ def run_calibration(spec: CalibrationSpec, services: Any) -> Mapping[str, Any]:
     # 최종 평가 기록: 마지막 단계 최적점. 탄성 전용 카드로만 평가됐는데 테이블 카드가 있으면 전체 카드로 1회 더(예산 밖).
     final_rec = results[-1].best if results else None
     needs_full = any(m.table is not None for m in _final_materials(prep, theta).values())
-    if final_rec is None or (results and results[-1].stage == "elastic" and needs_full) or not results:
+    if final_rec is None or (results and results[-1].stage == "elastic" and needs_full and prep.has_plastic) \
+            or not results:
         final_rec = ev.evaluate(theta, "final", elastic_only=False, history_stage="diagnostics")
         ev.finish(final_rec, is_best=True)
         if not final_rec.valid:

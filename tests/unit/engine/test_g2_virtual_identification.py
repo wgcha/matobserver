@@ -64,7 +64,7 @@ def test_o5_coeff_swift(tmp_path, noise, opt, tab_tol):
     res, _ = _single(tmp_path, "mat024_coeff", noise=noise, optimizer=(opt, {}))
     s = res["slots"][0]
     J = res["metadata"]["residuals"]["J"]
-    assert J <= 0.01, J  # 계수 모드 기준(O-5): F-δ J ≤ 0.01
+    assert J <= (0.01 if noise == 0 else 0.012), J  # O-5: 노이즈 0% J ≤ 0.01 (노이즈 시 1.2·J참값 판정은 verifier 조건 테스트)
     if tab_tol is not None:  # 1.1: 계수 비유일 → 판정은 테이블 기준 (BO는 계수 강상관으로 3–11%, 판정 대상 아님)
         assert _table_err(s) <= tab_tol
     assert s["hardening"]["law"] == "swift" and s["valid_range"]["max_plastic_strain"] > 0.03
@@ -80,7 +80,7 @@ def test_o5_table(tmp_path, noise):
     res, _ = _single(tmp_path, "mat024_table", noise=noise, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04})
     s = res["slots"][0]
     assert _table_err(s) <= 0.03
-    assert res["metadata"]["residuals"]["J"] <= 0.01
+    assert res["metadata"]["residuals"]["J"] <= (0.01 if noise == 0 else 0.012)
     stresses = [r["true_stress"] for r in s["card_blocks"]["table"]]
     assert all(b >= a for a, b in zip(stresses, stresses[1:]))
 
@@ -94,10 +94,10 @@ def test_o5_exact_E_table_recovery(tmp_path):
 
 
 def test_record_v11_draft_tolerance(tmp_path):
-    """1.1 초안값 기록: elastic_dev_tol=0.015(명시)에서 테이블 모드 3.0–4.0%(3% 미달) — 0.01 확정 근거."""
+    """1.1 초안값 기록: elastic_dev_tol=0.015(명시). 정칙화 전 3.3–3.5%(0.01 확정 근거), 정칙화 후 ≤ 4% 범위 기록."""
     res, _ = _single(tmp_path, "mat024_table", noise=0.0, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04},
                      cfg={"alignment.elastic_dev_tol": 0.015})
-    assert 0.03 < _table_err(res["slots"][0]) <= 0.04
+    assert _table_err(res["slots"][0]) <= 0.04
 
 
 def test_elastic_bias_v10_tolerance(tmp_path):
@@ -166,3 +166,78 @@ def test_low_data_warning_precheck(tmp_path):
                      options={"table_nodes": 40, "max_strain": 0.06}, cfg={"identifiability.post_fit": False})
     assert E.IDENTIFIABILITY_LOW_DATA in res["metadata"]["identifiability"]["precheck"]["codes"]
     assert E.IDENTIFIABILITY_LOW_DATA in {w["code"] for w in res["metadata"]["warnings"]}
+
+
+# ---- Verifier G2 재현 조건 (E 2.5 GPa, Swift 90 MPa/0.01/0.15, δmax 6 mm, 가산 잡음 σ = 수준·max|F|, seed 7) ----
+from matobserver.engine.context import preprocess as _pre  # noqa: E402
+from matobserver.engine.evaluate import Evaluator as _Ev  # noqa: E402
+from matobserver.solvers.surrogate.beam import Section, Uniaxial, three_point_bending  # noqa: E402
+
+VE, VSW, VDMAX = 2.5e9, (9.0e7, 0.01, 0.15), 0.006
+
+
+def _vcurve(noise: float, seed: int = 7):
+    K, e0, n = VSW
+    ep = np.concatenate([[0.0], np.geomspace(1e-6, 0.3, 400)])
+    sec = Section.from_boxes([("body", -W / 2, W / 2, 0.0, H)])
+    d = np.linspace(0.0, VDMAX, 300)
+    r = three_point_bending(sec, [Uniaxial.from_card(VE, list(zip(ep, K * (e0 + ep) ** n)))], L, d)
+    F = r.force.copy()
+    if noise > 0:
+        F = F + np.random.default_rng(seed).normal(0.0, noise * np.max(np.abs(F)), F.shape)
+        F[0] = 0.0
+    return d + 1.8e-7 * F, F, r.eps_p_max["body"]
+
+
+def _vrun(tmp: Path, model: str, noise: float, params=None):
+    x, F, ep_true = _vcurve(noise)
+    t = D.make_test("t1", [D.make_run("r", x, F, width=W, thickness=H, span=L)], D.make_manifest(),
+                    {"kind": "box", "dimensions": {"total_length": 0.08}}, store_dir=tmp)
+    slot = {"slot": "body", "role": "identify", "material_model": model, "reference": D.reference()}
+    if params:
+        slot["params"] = params
+    svc = D.FakeServices(tmp, D.make_registry(), Config())
+    res = run_calibration(D.make_spec([t], [slot], optimizer=("", {}), elastic_optimizer=("", {})), svc)
+    truth = D.make_spec([t], [{"slot": "body", "role": "identify", "material_model": "mat024_coeff",
+                               "reference": D.reference()}])
+    ev = _Ev(_pre(truth, svc), svc, "surrogate_beam", {}, 60)
+    K, e0, n = VSW
+    J_true = ev.evaluate({"body.E": VE, "body.K": K, "body.eps0": e0, "body.n": n}, "plastic", elastic_only=False).J
+    return res, J_true, ep_true
+
+
+def _vtab(slot) -> float:
+    K, e0, n = VSW
+    tb = slot["card_blocks"]["table"]
+    ep = np.array([r["plastic_strain"] for r in tb]); sg = np.array([r["true_stress"] for r in tb])
+    m = ep <= slot["valid_range"]["max_plastic_strain"] * (1 + 1e-9)
+    return float(np.max(np.abs(sg[m] / (K * (e0 + ep[m]) ** n) - 1)))
+
+
+@pytest.mark.parametrize("model", ["mat024_table", "mat024_coeff"])
+@pytest.mark.parametrize("noise", [0.0, 0.005])
+def test_o5_verifier_condition_defaults(tmp_path, model, noise):
+    """O-5(1.1 보완): 노이즈 0% J ≤ 0.01, 노이즈 시 J ≤ 1.2·J(참값). 테이블 ≤ 3% (coeff·table 공통). 설정·옵션 기본값."""
+    res, J_true, ep_true = _vrun(tmp_path, model, noise)
+    J = res["metadata"]["residuals"]["J"]
+    assert (J <= 0.01) if noise == 0 else (J <= 1.2 * J_true), (J, J_true)
+    s = res["slots"][0]
+    assert _vtab(s) <= 0.03
+    # 유효 범위 = 비교 구간 끝(X_u) 시점 값 (overtravel 미포함)
+    assert abs(s["valid_range"]["max_plastic_strain"] / ep_true - 1) <= (0.05 if noise == 0 else 0.10)  # 식별 재료 기준 (coeff 2% 는 아래 전용 테스트)
+
+
+def test_valid_range_at_x_max_not_overtravel(tmp_path):
+    res, _, ep_true = _vrun(tmp_path, "mat024_coeff", 0.0)
+    assert abs(res["slots"][0]["valid_range"]["max_plastic_strain"] / ep_true - 1) <= 0.02
+
+
+def test_fixed_plastic_params_fit_E_with_full_card(tmp_path):
+    """소성 변수가 전부 fixed_value 면 plastic 단계가 없고 탄성 단계가 고정 카드 전체(탄소성 포함)로 E 를 맞춘다."""
+    K, e0, n = VSW
+    res, _, _ = _vrun(tmp_path, "mat024_coeff", 0.0,
+                      params={"K": {"fixed_value": K}, "eps0": {"fixed_value": e0}, "n": {"fixed_value": n}})
+    s = res["slots"][0]
+    assert abs(s["card_blocks"]["elastic"]["youngs_modulus"] / VE - 1) <= 0.005
+    assert res["metadata"]["residuals"]["J"] <= 0.01
+    assert set(res["metadata"]["termination"]["per_stage"]) == {"elastic"}

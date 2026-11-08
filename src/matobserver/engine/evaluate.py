@@ -62,10 +62,11 @@ class EvalRecord:
     wall_time_s: float
     started_at: str
     is_best: bool = False
+    reg_residual: np.ndarray = field(default_factory=lambda: np.array([]))
 
     def outcome(self) -> EvalOutcome:
         comp: dict[str, float] = {}
-        for i, v in enumerate(self.residual):
+        for i, v in enumerate(np.concatenate([self.residual, self.reg_residual])):
             comp[f"{RESIDUAL_PREFIX}{i:07d}"] = float(v)
         return EvalOutcome(J=float(self.J), penalized=bool(self.penalized), components=comp)
 
@@ -221,11 +222,21 @@ class Evaluator:
         if not math.isfinite(J):
             J = failed_J
             penalized = True
+        reg_parts: list[np.ndarray] = []
+        if not elastic_only:  # 선택: 모델 정칙화 잔차(최적화기 잔차에만 — J·사후 진단 잔차는 데이터만)
+            locals_, _ = split_theta(self.prep, theta)
+            for sc in self.prep.slots:
+                fn = getattr(sc.model, "regularization_residuals", None) if sc.identify else None
+                if fn is not None:
+                    rr = np.asarray(fn(locals_[sc.name]), dtype=float)
+                    if rr.size:
+                        reg_parts.append(rr)
         residual = np.concatenate(resid_parts) if resid_parts else np.array([])
+        reg_residual = np.concatenate(reg_parts) if reg_parts else np.array([])
         rec = EvalRecord(eval_index=idx, stage=history_stage or stage, theta=theta, J=float(J), penalized=penalized,
                          failed=not any_curve, valid=all_curve, components=jcomp, residual=residual,
                          per_test=per_test, per_run=per_run, pairs=pairs, cases=cases, materials=mats,
-                         wall_time_s=time.perf_counter() - t0, started_at=started)
+                         wall_time_s=time.perf_counter() - t0, started_at=started, reg_residual=reg_residual)
         return rec
 
     def _run_case(self, case, mats, wd: Path, test_key: str) -> CaseOutcome:

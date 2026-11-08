@@ -307,7 +307,10 @@ def prepare_slots(spec: CalibrationSpec, services: Any, warnings: list[dict[str,
         opts = {k: cfg_get(cfg, v) for k, v in MATERIAL_CONFIG_OPTIONS.items()}
         opts = {k: v for k, v in opts.items() if v is not None}
         opts.update({k: v for k, v in entry.defaults.items()})
-        opts.update(dict(s.get("options") or {}))
+        req_opts = dict(s.get("options") or {})
+        opts.update(req_opts)
+        if "max_strain" not in req_opts and "max_strain" not in entry.defaults:
+            opts["max_strain_auto"] = True  # 요청이 노드 상한을 주지 않으면 모델이 예상 유효 범위로 제한(table 모드)
         ref, defaulted = neutral_from_any(s.get("reference"), dens)
         if defaulted:
             warnings.append(warn(E.DENSITY_DEFAULTED, f"밀도 미입력: 기본값 {dens} kg/m^3 사용", slot=name))

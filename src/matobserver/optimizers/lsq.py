@@ -40,6 +40,7 @@ class LeastSquares(BaseOptimizer):
         self.radius0 = float(o.get("initial_radius", 0.25))
         self.full_qd = int(o.get("full_quadratic_max_d", 3))
         self.prefix = str(o.get("residual_prefix", "residual:"))
+        self.damping_floor = float(o.get("damping_floor", 1e-4))
         self._reset_impl()
 
     def _reset_impl(self) -> None:
@@ -246,7 +247,10 @@ class LeastSquares(BaseOptimizer):
                 return
             Af = A[np.ix_(free, free)]
             gf = g[free]
-            D = np.maximum(np.diag(Af), 1e-12 * max(1.0, float(np.max(np.diag(Af))) if Af.size else 1.0))
+            # 감쇠 하한: 둔감 변수(유효 범위 밖 테이블 노드 등)의 diag≈0 이 단계를 지배해 신뢰 반경에 잘려
+            # 유효 방향 이동이 사라지는 것을 막는다(최대 대각의 1e-4 를 하한으로).
+            dmax = float(np.max(np.diag(Af))) if Af.size else 1.0
+            D = np.maximum(np.diag(Af), self.damping_floor * max(dmax, 1e-300))
             try:
                 pf = -np.linalg.solve(Af + self._mu * np.diag(D), gf)
             except np.linalg.LinAlgError:
