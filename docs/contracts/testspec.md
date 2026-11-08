@@ -111,7 +111,7 @@ SolverAdapter `capabilities().extractors`가 지원 이름을 선언한다. 출�
 
 - `window.split = none` 또는 잡에 plastic 단계 변수가 하나도 없으면(예: 전 슬롯 `mat001`): Ω1 = X 전체, Ω2 = ∅.
 - `auto`: 3단계 k₀(토우 보정 없으면 같은 맞춤 구간으로 계산)를 써서 x_e = { x > x(`toe_fit_hi`·F_peak) 이고 y(x) < (1 − `elastic_dev_tol`)·k₀·x 인 최소 x }. 없으면 x_e = X_u(전 구간 탄성). x_e는 [X_l, X_u]로 자른다.
-- 설정 키: `alignment.elastic_dev_tol`(**0.015**, 1.1; 1.0은 0.05 — G2에서 초기 소성 혼입으로 E −1.3% 편향), `alignment.elastic_min_raw_points`(5).
+- 설정 키: `alignment.elastic_dev_tol`(**0.01**, 1.1; 1.0은 0.05 — G2에서 초기 소성 혼입으로 E −1.3% 편향, 0.015는 테이블 오차 3.2–3.5%로 G2 기준 3% 미달), `alignment.elastic_min_raw_points`(5).
 
 ## 6. 변위 채널 선택 (굽힘)
 
@@ -294,7 +294,7 @@ n차 고속 TestSpec은 같은 `reference_strain_rate()`로 시험별 ε̇를 �
 | --- | --- | --- |
 | T-1 | 정렬 기본값(접촉 2%, 토우 맞춤 10–40%, 탄성 이탈 1.5%(1.1, 이전 5%), 파손 30% 급락, N=200, 탄성 최소 30점, k=4)은 plan에 없어 새로 정함. G2 결과로 탄성 이탈만 조정, 나머지는 실시험 적용(G4) 후 조정 | 가정 |
 | T-2 | (결정 반영) `auto` 변위 채널은 크로스헤드 기본, 처짐계는 `testspec.bending.prefer_deflection=true`로 켜는 옵션 | 확정 |
-| T-7 | 토우 맞춤 구간(`toe_fit_lo/hi` = 10–40%)과 탄성 이탈 허용(`elastic_dev_tol` = 0.015)은 실시험 적용 G4에서 조정할 항목 | 가정(G4 조정) |
+| T-7 | 토우 맞춤 구간(`toe_fit_lo/hi` = 10–40%)과 탄성 이탈 허용(`elastic_dev_tol` = 0.01)은 실시험 적용 G4에서 조정할 항목 | 가정(G4 조정) |
 | T-3 | 비교 구간 상한은 시험 기준으로 고정하고 해석 범위 부족은 8단계 페널티로만 반영(구간이 θ마다 바뀌지 않게) | 가정 |
 | T-4 | 다중 run 결합은 run별 J의 산술평균(평균 곡선을 만들지 않음) — run별 잔차·시편별 통계를 남기기 위함 | 가정 |
 | T-5 | 식별성 사전 점검 실패 시 거절/경고 — 사용자 결정 대기. 현재 기본값 `reject` 유지(설정 `identifiability.precheck_mode`) | 미결 |
@@ -307,6 +307,6 @@ n차 고속 TestSpec은 같은 `reference_strain_rate()`로 시험별 ε̇를 �
 
 | 버전 | 날짜 | 변경(추가·기본값 조정만, 기존 필드 의미 불변) |
 | --- | --- | --- |
-| 1.0 → 1.1 | 2026-11-08 | `alignment.elastic_dev_tol` 0.05 → 0.015(§5.1), T-1·T-7 갱신 |
+| 1.0 → 1.1 | 2026-11-08 | `alignment.elastic_dev_tol` 0.05 → 0.01(§5.1), T-1·T-7 갱신 |
 | 1.0 → 1.1 | 2026-11-08 | explicit 검사 `vs_experiment` run 산술평균(§8.1) |
 | 1.0 → 1.1 | 2026-11-08 | 계수 비유일 시 테이블 기준 판정(§9.3) |

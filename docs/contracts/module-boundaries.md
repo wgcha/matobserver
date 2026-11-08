@@ -274,7 +274,7 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | B-10 | 레지스트리 로더: 중복·클래스 불일치 → 기동 실패 | 통과 |
 | B-11 | 엔진 대역(가짜 `run_calibration`)으로 E3→E5→E6 종단 흐름 | 통과 |
 | B-12 | (1.1) `CalibrationSpec.plasticity_mode`·`explicit_check` 채움(job_options와 동일값), 취소 3경로(api.md §4.12) → `cancelled`·error null·결과 미저장 | 통과 |
-| B-13 | (1.1) 설정 기본값 갱신: `alignment.elastic_dev_tol`=0.015, `material.mat024_table.first_node_strain`=0.002, `engine.stages.{elastic,plastic}.optimizer`=lsq(1.0 키 별칭) | 통과 |
+| B-13 | (1.1) 설정 기본값 갱신: `alignment.elastic_dev_tol`=0.01, `material.mat024_table.first_node_strain`=0.002, `engine.stages.{elastic,plastic}.optimizer`=lsq(1.0 키 별칭) | 통과 |
 
 ## 6. 설정 파일
 
