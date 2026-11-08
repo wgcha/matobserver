@@ -50,8 +50,8 @@ def test_defaults_are_filled_from_config(active_env):
                            "max_wall_time_s": float(cfg.get("budget.default_max_wall_time_s")),
                            "run_timeout_s": float(cfg.get("solver.run_timeout_s"))}
     assert s["seed"] == cfg.get("engine.default_seed") and s["solver"]["name"] == cfg.get("engine.default_solver")
-    assert s["optimizer"]["name"] == cfg.get("engine.plastic_stage.optimizer")
-    assert s["elastic_optimizer"]["name"] == cfg.get("engine.elastic_stage.optimizer")
+    assert s["optimizer"]["name"] == cfg.get("engine.stages.plastic.optimizer")
+    assert s["elastic_optimizer"]["name"] == cfg.get("engine.stages.elastic.optimizer")
     assert s["plasticity_mode"] == cfg.get("engine.default_plasticity_mode") and s["friction"] == {"mode": "fixed"}
     assert s["explicit_check"] == {"enabled": False}
     assert v.request["seed"] == s["seed"] and v.request_hash == s["request_hash"]

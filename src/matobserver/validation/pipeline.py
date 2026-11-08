@@ -300,8 +300,8 @@ class _Validator:
     def step2(self) -> None:
         cfg, reg = self.cfg, self.reg
         self.plasticity_mode = self.req.get("plasticity_mode") or cfg.get("engine.default_plasticity_mode")
-        self.names["optimizer"] = _plugin_ref(self.req.get("optimizer"), cfg.get("engine.plastic_stage.optimizer"))
-        self.names["elastic_optimizer"] = _plugin_ref(self.req.get("elastic_optimizer"), cfg.get("engine.elastic_stage.optimizer"))
+        self.names["optimizer"] = _plugin_ref(self.req.get("optimizer"), cfg.get("engine.stages.plastic.optimizer"))
+        self.names["elastic_optimizer"] = _plugin_ref(self.req.get("elastic_optimizer"), cfg.get("engine.stages.elastic.optimizer"))
         self.names["solver"] = _plugin_ref(self.req.get("solver"), cfg.get("engine.default_solver"))
         for fld, key, ptype, code in (("optimizer", "optimizer", "optimizer", E.OPTIMIZER_UNKNOWN),
                                       ("elastic_optimizer", "elastic_optimizer", "optimizer", E.OPTIMIZER_UNKNOWN),

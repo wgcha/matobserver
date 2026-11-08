@@ -51,7 +51,7 @@ FIELDS = {
     "CurveData": ["x", "y", "x_quantity", "y_quantity"],
     "Extracted": ["curves", "scalars", "field_max", "energy"],
     "SolverCapabilities": ["analysis_modes", "extractors", "material_keywords", "extension_keys",
-                           "unit_system", "supports_overrides"],
+                           "unit_system", "supports_overrides", "card_format"],
     "RunOverrides": ["section_by_slot", "forbid_mass_scaling", "engine_params_si"],
     "MaterialCapabilities": ["solvers", "solver_keyword", "stages", "produces_table", "rate_dependent"],
     "ReferencePointRequest": ["name", "locate"],
@@ -76,7 +76,7 @@ FIELDS = {
                      "recipe_params_si", "user_window", "weight"],
     "ResolvedMaterials": ["mode", "slots"],
     "CalibrationSpec": ["job_id", "schema_version", "tests", "materials", "optimizer", "elastic_optimizer",
-                        "solver", "friction", "budget", "seed", "request_hash"],
+                        "solver", "friction", "budget", "seed", "request_hash", "plasticity_mode", "explicit_check"],
 }
 
 PROTOCOL_MEMBERS = {
@@ -84,7 +84,7 @@ PROTOCOL_MEMBERS = {
                   {"setup", "ask", "tell", "suggest_stop", "best", "state", "restore"}),
     "SolverAdapter": ({"name", "version"},
                       {"capabilities", "prepare", "run", "extract", "solver_version", "cleanup",
-                       "single_element_uniaxial"}),
+                       "single_element_uniaxial", "render_card"}),
     "MaterialModel": ({"name", "version"},
                       {"bind", "param_space", "to_neutral", "capabilities", "initial_guess", "describe"}),
     "GeometryMesher": ({"name", "version", "role"}, {"validate", "mesh"}),

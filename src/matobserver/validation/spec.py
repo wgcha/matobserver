@@ -117,4 +117,6 @@ def build_spec(
         budget=dict(snapshot["budget"]),
         seed=int(snapshot["seed"]),
         request_hash=snapshot["request_hash"],
+        plasticity_mode=snapshot.get("plasticity_mode"),
+        explicit_check=snapshot.get("explicit_check"),
     )

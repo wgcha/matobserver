@@ -174,12 +174,19 @@ engine:
   default_plasticity_mode: coeff
   # result.md §4.11 예시 seed (계약 값 없음 — 예시값 사용)
   default_seed: 20261108
+  stages:
+    elastic:
+      # plugins.md §4.1(1.1): 탄성 단계 기본 최적화기
+      optimizer: lsq
+    plastic:
+      # plugins.md §4.1(1.1): 탄소성 단계 기본 최적화기 (1.0 은 bo)
+      optimizer: lsq
+  # 1.0 별칭: 값이 있으면 engine.stages.elastic.optimizer 가 기본일 때 그 값을 쓴다
   elastic_stage:
-    # plugins.md P-5: 탄성 단계 기본 최적화기
-    optimizer: lsq
+    optimizer: null
+  # 1.0 별칭: 값이 있으면 engine.stages.plastic.optimizer 가 기본일 때 그 값을 쓴다
   plastic_stage:
-    # plan: BO 기본 (plugins.md §4.1)
-    optimizer: bo
+    optimizer: null
   stagnation:
     # plugins.md §4.1: 연속 k회 정체 (계약 값 없음 — 초기값, 환경/운영에서 조정)
     k: 5
@@ -239,7 +246,7 @@ alignment:
   # testspec.md §5 7단계 k
   output_oversample: 4
   # testspec.md §5.1
-  elastic_dev_tol: 0.05
+  elastic_dev_tol: 0.015
   # testspec.md §5.1 / CURVE_NO_ELASTIC_REGION
   elastic_min_raw_points: 5
 
@@ -308,6 +315,8 @@ material:
   mat024_table:
     # plugins.md §4.3 옵션 table_nodes
     nodes: 8
+    # plugins.md §4.3(1.1): 테이블 첫 노드 소성변형률
+    first_node_strain: 0.002
 
 result:
   # result.md §3.2 / plugins.md §4.3

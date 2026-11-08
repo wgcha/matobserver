@@ -47,6 +47,11 @@ def scrub_paths(message: str, roots: list[Path]) -> str:
     return out
 
 
+def _is_cancelled_exc(e: BaseException) -> bool:
+    """엔진의 `CalibrationCancelled`(core.errors.MatObserverError 하위)를 import 없이 알아본다 (엔진 미설치·지연 로딩 대비)."""
+    return any(c.__name__ == "CalibrationCancelled" for c in type(e).__mro__)
+
+
 class WorkerLock:
     """워커 프로세스가 하나만 돌도록 파일 잠금을 잡는다 (`paths.data_dir/worker.lock`)."""
 
@@ -195,18 +200,8 @@ class Worker:
                 job_options={"plasticity_mode": snapshot.get("plasticity_mode"), "explicit_check": snapshot.get("explicit_check")},
             )
             result = dict(self.hooks.run_calibration(spec, services))
-        except EngineFailure as e:
-            if self.store.is_cancel_requested(job_id):
-                self.store.finish_job(job_id, CANCELLED)
-                return
-            self.store.finish_job(job_id, FAILED, error={"code": e.code, "message": scrub_paths(str(e), roots)})
-            return
         except Exception as e:  # noqa: BLE001
-            if self.store.is_cancel_requested(job_id):
-                self.store.finish_job(job_id, CANCELLED)
-                return
-            self._log_failure(job_id, e)
-            self.store.finish_job(job_id, FAILED, error={"code": E.INTERNAL_ERROR, "message": "내부 오류로 잡이 실패했습니다."})
+            self._on_run_exception(job_id, e, roots)
             return
         if self.store.is_cancel_requested(job_id):
             self.store.finish_job(job_id, CANCELLED)
@@ -218,6 +213,17 @@ class Worker:
             self.store.finish_job(job_id, FAILED, error={"code": E.INTERNAL_ERROR, "message": "결과 저장 중 오류가 발생했습니다."})
             return
         self.store.finish_job(job_id, SUCCEEDED, result=result)
+
+    def _on_run_exception(self, job_id: str, e: Exception, roots: list[Any]) -> None:
+        """엔진 예외 -> 잡 종료 상태. 취소 3경로 중 1·2: `CalibrationCancelled`, 취소 요청 후의 다른 예외 -> cancelled (error null, 결과 없음)."""
+        if _is_cancelled_exc(e) or self.store.is_cancel_requested(job_id):
+            self.store.finish_job(job_id, CANCELLED)
+            return
+        if isinstance(e, EngineFailure):
+            self.store.finish_job(job_id, FAILED, error={"code": e.code, "message": scrub_paths(str(e), roots)})
+            return
+        self._log_failure(job_id, e)
+        self.store.finish_job(job_id, FAILED, error={"code": E.INTERNAL_ERROR, "message": "내부 오류로 잡이 실패했습니다."})
 
     def _log_failure(self, job_id: str, exc: BaseException) -> None:
         log.error("job %s failed: %r", job_id, exc)

@@ -443,6 +443,7 @@ class SolverCapabilities:
     extension_keys: frozenset[str]  # 해석 가능한 NeutralMaterial.extensions 키
     unit_system: str  # 파일 단위계 "mm-N-s-tonne"
     supports_overrides: bool  # RunOverrides(요소 정식화·hourglass·질량 스케일링 금지) 지원 — explicit 재현 검사 필요조건
+    card_format: str | None = None  # (1.1) render_card 출력 형식. lsdyna: "lsdyna_k", surrogate_beam: None
 
 
 @dataclass(frozen=True)
@@ -476,6 +477,8 @@ class SolverAdapter(Protocol):
         self, material: NeutralMaterial, strain_max: float, workdir: Path, timeout_s: float
     ) -> CurveData: ...
     # 1요소 단축 덱 실행 → x=유효소성변형률[1], y=진응력[Pa] (왕복 검사용, module-boundaries.md §4.6)
+    def render_card(self, neutral: NeutralMaterial, slot: SlotBinding, options: Mapping[str, Any]) -> str: ...
+    # (1.1) 결과 카드 렌더링. options: {"title": str, "header_comments": list[str]}. card_format=None이면 NotImplementedError.
 
 
 # ======================================================================================
@@ -627,6 +630,8 @@ class CalibrationSpec:  # 검증·정규화 완료된 요청 (api.md §4.2 + 해
     budget: Mapping[str, float]
     seed: int
     request_hash: str
+    plasticity_mode: str | None = None  # (1.1) 요청 plasticity_mode (None이면 엔진이 job_options → 설정 순으로 읽음)
+    explicit_check: Mapping[str, Any] | None = None  # (1.1) 요청 explicit_check 해석값
 
 
 class EngineServices(Protocol):
@@ -635,6 +640,7 @@ class EngineServices(Protocol):
     owner_kind: Literal["job", "recipe_verification"]
     owner_id: str  # job_id 또는 verification_id
     cancel: CancelToken
+    job_options: Mapping[str, Any]  # (1.1) Backend 통로: {"plasticity_mode", "explicit_check"}
 
     def workdir(self, *parts: str) -> Path: ...
     # job: paths.work_dir/{job_id}/... / recipe_verification: paths.work_dir/_recipes/{verification_id}/... 생성·반환

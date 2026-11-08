@@ -177,8 +177,10 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("engine.default_plasticity_mode", "coeff",
        "api.md §4.3 plasticity_mode 기본. U-1(plugins.md) 미결 — 현재 계수 모드 유지", choices=("coeff", "table")),
     _k("engine.default_seed", 20261108, "result.md §4.11 예시 seed (계약 값 없음 — 예시값 사용)"),
-    _k("engine.elastic_stage.optimizer", "lsq", "plugins.md P-5: 탄성 단계 기본 최적화기"),
-    _k("engine.plastic_stage.optimizer", "bo", "plan: BO 기본 (plugins.md §4.1)"),
+    _k("engine.stages.elastic.optimizer", "lsq", "plugins.md §4.1(1.1): 탄성 단계 기본 최적화기"),
+    _k("engine.stages.plastic.optimizer", "lsq", "plugins.md §4.1(1.1): 탄소성 단계 기본 최적화기 (1.0 은 bo)"),
+    _k("engine.elastic_stage.optimizer", None, "1.0 별칭: 값이 있으면 engine.stages.elastic.optimizer 가 기본일 때 그 값을 쓴다", types=_STR_OR_NONE),
+    _k("engine.plastic_stage.optimizer", None, "1.0 별칭: 값이 있으면 engine.stages.plastic.optimizer 가 기본일 때 그 값을 쓴다", types=_STR_OR_NONE),
     _k("engine.stagnation.k", 5, f"plugins.md §4.1: 연속 k회 정체 ({_NO_VALUE})"),
     _k("engine.stagnation.rel_tol", 1e-3, f"plugins.md §4.1: 상대 개선 임계 ({_NO_VALUE})", types=_NUM),
     _k("engine.abort_if_initial_all_failed", True, "api.md §7.3 ALL_INITIAL_RUNS_FAILED"),
@@ -207,7 +209,7 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("alignment.filter.window", 11, "testspec.md §5 6단계"),
     _k("alignment.filter.cfc_class", 60, "testspec.md §5 6단계 (SAE J211 CFC)"),
     _k("alignment.output_oversample", 4, "testspec.md §5 7단계 k"),
-    _k("alignment.elastic_dev_tol", 0.05, "testspec.md §5.1", types=_NUM),
+    _k("alignment.elastic_dev_tol", 0.015, "testspec.md §5.1", types=_NUM),
     _k("alignment.elastic_min_raw_points", 5, "testspec.md §5.1 / CURVE_NO_ELASTIC_REGION"),
     # ---- objective · cases · identifiability ----
     _k("objective.region_weights", {"elastic": 1.0, "plastic": 1.0}, "testspec.md §8: 구간 가중 w_k", types=(dict,)),
@@ -238,6 +240,7 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("material.mat024.max_strain", 0.2, "plugins.md §4.3 옵션 max_strain", types=_NUM),
     _k("material.mat024_coeff.default_law", "swift", "plugins.md §4.3 / U-1", choices=("swift", "voce", "swift_voce")),
     _k("material.mat024_table.nodes", 8, "plugins.md §4.3 옵션 table_nodes"),
+    _k("material.mat024_table.first_node_strain", 0.002, "plugins.md §4.3(1.1): 테이블 첫 노드 소성변형률", types=_NUM),
     # ---- result · uncertainty (result.md) ----
     _k("result.table_points", 50, "result.md §3.2 / plugins.md §4.3"),
     _k("result.table_spacing", "geometric", "result.md §3.2", choices=("geometric", "linear")),
@@ -397,6 +400,20 @@ class _Node:
         return f"<ConfigSection {self._prefix}>"
 
 
+#: 1.0 별칭 키 -> 1.1 정식 키 (module-boundaries.md §6)
+ALIASES: Final[dict[str, str]] = {
+    "engine.elastic_stage.optimizer": "engine.stages.elastic.optimizer",
+    "engine.plastic_stage.optimizer": "engine.stages.plastic.optimizer",
+}
+
+
+def _resolve_aliases(flat: dict[str, Any]) -> None:
+    """별칭 키가 설정돼 있고 정식 키가 기본값 그대로면 정식 키에 별칭 값을 옮긴다 (정식 키를 직접 바꾼 경우 정식 키 우선)."""
+    for old, new in ALIASES.items():
+        if flat.get(old) is not None and flat[new] == SPECS_BY_KEY[new].default:
+            flat[new] = flat[old]
+
+
 class Config:
     """불변 설정 객체. 키는 점 표기(`"solver.lsdyna.ncpu"`) 또는 속성(`cfg.solver.lsdyna.ncpu`)으로 읽는다."""
 
@@ -411,6 +428,7 @@ class Config:
                 _assign(flat, key, value, "overrides")
         for key, value in flat.items():
             _validate(key, value)
+        _resolve_aliases(flat)
         object.__setattr__(self, "_values", flat)
         object.__setattr__(self, "source_path", source_path)
 

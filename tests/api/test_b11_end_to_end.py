@@ -58,7 +58,7 @@ def test_engine_receives_calibration_spec(active_env):
     spec: CalibrationSpec = seen["spec"]
     assert isinstance(spec, CalibrationSpec) and spec.job_id == jid and spec.schema_version == "1.0"
     assert spec.seed == 7 and dict(spec.budget) == {"max_evaluations": 33, "max_wall_time_s": 900.0, "run_timeout_s": 60.0}
-    assert spec.optimizer[0] == "bo" and spec.elastic_optimizer[0] == "lsq" and spec.solver[0] == "lsdyna"
+    assert spec.optimizer[0] == "lsq" and spec.elastic_optimizer[0] == "lsq" and spec.solver[0] == "lsdyna"
     t = spec.tests[0]
     assert (t.test_key, t.test_type, t.recipe.recipe_ref) == ("t1", "bending", RECIPE_REF)
     assert t.recipe.manifest["recipe_id"] == "bending3p-param" and t.recipe.store_dir.is_dir()
