@@ -18,10 +18,12 @@ dependencies = [
     "pydantic>=2.6",
     "httpx>=0.27",
     "python-multipart>=0.0.9",  # POST /v1/files, POST /v1/admin/recipes (multipart)
-    # ---- 아래 자리는 각 소유자가 PR로 추가를 요청한다 (module-boundaries.md §1: 의존성은 각자 요청, 버전 고정은 이 파일) ----
-    # Impl-Mesh:    gmsh (mesh/)
-    # Impl-Optim:   scipy, scikit-learn 또는 botorch (optimizers/, engine/)
-    # Impl-Solver:  binout 리더 (예: lasso-python) (solvers/lsdyna/, deck/)
+    # ---- Impl-Mesh (mesh/) — 시스템 라이브러리 libGLU 필요 ----
+    "gmsh>=4.15,<5",
+    # ---- Impl-Optim (optimizers/, engine/) ----
+    "scipy>=1.11",
+    # ---- Impl-Solver (solvers/lsdyna/, deck/) — binout·d3plot 리더 ----
+    "lasso-python>=2.0.4",
 ]
 
 [project.scripts]
@@ -30,6 +32,7 @@ matobserver = "matobserver.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "jsonschema>=4",
 ]
 
 [tool.setuptools.packages.find]

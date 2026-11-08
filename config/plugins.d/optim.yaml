@@ -1,4 +1,64 @@
 # 소유자: Impl-Optim — optimizer, material_model, test_spec, 그리고 solver `surrogate_beam` 항목을 추가한다.
 # 형식: docs/contracts/plugins.md §2.
 schema_version: "1.0"
-plugins: []
+plugins:
+  # ---- optimizer (plugins.md §4.1) ----
+  - type: optimizer
+    name: bo
+    class: "matobserver.optimizers.bo:BayesianOptimizer"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      acquisition: ei
+      kernel: matern52
+      xi: 0.01
+  - type: optimizer
+    name: lsq
+    class: "matobserver.optimizers.lsq:LeastSquares"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      fd_step_rel: 0.01
+      max_iter: 50
+      ftol: 1.0e-6
+  - type: optimizer
+    name: random
+    class: "matobserver.optimizers.random_search:RandomSearch"
+    version: "1.0.0"
+    enabled: true
+  # ---- material_model (plugins.md §4.3) ----
+  - type: material_model
+    name: mat001
+    class: "matobserver.materials.mat001:Mat001"
+    version: "1.0.0"
+    enabled: true
+  - type: material_model
+    name: mat024_coeff
+    class: "matobserver.materials.mat024:Mat024Coeff"
+    version: "1.0.0"
+    enabled: true
+    aliases:
+      - name: mat024
+        when: {plasticity_mode: coeff}
+  - type: material_model
+    name: mat024_table
+    class: "matobserver.materials.mat024:Mat024Table"
+    version: "1.0.0"
+    enabled: true
+    aliases:
+      - name: mat024
+        when: {plasticity_mode: table}
+    defaults:
+      node_spacing: geometric
+  # ---- test_spec (testspec.md §10) ----
+  - type: test_spec
+    name: bending
+    class: "matobserver.testspecs.bending:BendingTestSpec"
+    version: "1.0.0"
+    enabled: true
+  # ---- solver: 대리모델 (계약 테스트 기준 구현, G2) ----
+  - type: solver
+    name: surrogate_beam
+    class: "matobserver.solvers.surrogate.adapter:SurrogateBeamAdapter"
+    version: "1.0.0"
+    enabled: true
