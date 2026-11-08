@@ -111,6 +111,7 @@ multipart 필드:
 | `friction` | `FrictionInput` | 아니오 | — | 지그–시편 마찰. 생략 시 레시피 파라미터 `fric` 기본값 |
 | `budget` | `BudgetInput` | 아니오 | — | 해석 예산 |
 | `seed` | int ≥0 | 아니오 | — | 난수 시드. 생략 시 `engine.default_seed`. 재현성 근거 |
+| `explicit_check` | `ExplicitCheckInput` | 아니오 | — | 식별 후 explicit 재현 검사(1차 옵션, §4.6.1). 생략 시 설정 `verify.explicit_check.enabled`(기본 false) |
 
 `TestInput`:
 
@@ -206,6 +207,20 @@ multipart 필드:
 | | `max_wall_time_s` | number | s | 잡 전체 시간. 기본 `budget.default_max_wall_time_s` |
 | | `run_timeout_s` | number | s | 해석 1회 상한. 기본 `solver.run_timeout_s` |
 
+### 4.6.1 `ExplicitCheckInput` — explicit 재현 검사(1차 옵션)
+
+식별 완료 후 최종 카드를 제품 낙하 모델과 같은 요소 정식화·explicit 해석으로 같은 시험·레시피에 1회 재실행해 F-δ 차이를 결과에 기록한다. 판정은 **경고만**(잡 거절·실패 없음). 절차·지표는 [testspec.md §8.1](testspec.md), 결과는 [result.md §4.12](result.md).
+
+| 필드 | 타입 | 필수 | 단위 | 설명 |
+| --- | --- | --- | --- | --- |
+| `enabled` | bool | 예 | — | |
+| `tests` | string[] | 아니오 | — | 대상 `test_key`. 생략 시 전체 |
+| `section` | object | 아니오 | — | 슬롯 공통 덮어쓰기 `{elform: int, hourglass: {ihq: int, qm: number}}`. 슬롯별은 `slots: {slot: {...}}`. 생략 시 설정 `verify.explicit_check.elform`·`verify.explicit_check.hourglass.*` |
+| `loading_velocity` | number >0 | 아니오 | m/s | 준정적 압자 속도. 생략 시 `verify.explicit_check.loading_velocity_m_s` |
+| `max_ke_ratio` | number | 아니오 | 1 | 운동에너지/내부에너지 비 상한. 생략 시 `verify.explicit_check.max_ke_ratio` |
+
+요청에서 `enabled=true`인데 레시피에 explicit 제어 파일이 없거나 레시피 검증에서 질량 스케일링(`WARN_MASS_SCALING`)이 기록됐으면 400 `EXPLICIT_CHECK_UNAVAILABLE`; elform이 시편 topology와 맞지 않으면 400 `EXPLICIT_CHECK_SECTION_INVALID`. 설정 기본값으로 켜진 경우에는 같은 조건에서 검사를 건너뛰고 경고 `EXPLICIT_CHECK_SKIPPED`.
+
 ### 4.7 E3 응답과 검증
 
 성공 201 `JobCreated`:
@@ -261,7 +276,7 @@ multipart 필드:
 | --- | --- | --- |
 | `iter` | int | 완료된 해석 평가 수(전 단계 누적, plan의 `iter`) |
 | `best_J` | number \| null | 현재 단계까지 최소 목적함수([testspec.md §8](testspec.md)) |
-| `progress.stage` | `"preprocess"` \| `"elastic"` \| `"plastic"` \| `"diagnostics"` \| `"finalize"` | |
+| `progress.stage` | `"preprocess"` \| `"elastic"` \| `"plastic"` \| `"diagnostics"` \| `"finalize"` \| `"explicit_check"` | |
 | `error` | `{code, message}` \| null | `failed`일 때만. 코드는 §7.3 |
 
 ### 4.10 E6 `GET /v1/calibrations/{job_id}/result`
@@ -275,7 +290,7 @@ multipart 필드:
 | 필드 | 타입 | 단위 | 설명 |
 | --- | --- | --- | --- |
 | `eval_index` | int | — | 0부터, 잡 내 고유 |
-| `stage` | `"elastic"` \| `"plastic"` \| `"diagnostics"` \| `"roundtrip"` | — | |
+| `stage` | `"elastic"` \| `"plastic"` \| `"diagnostics"` \| `"roundtrip"` \| `"explicit_check"` | — | explicit_check 평가는 예산 밖 |
 | `theta` | object `{"{slot}.{param}" \| "_test.{test_key}.{param}": number}` | SI | 이 평가의 전체 θ(고정값 제외). 재료·비재료 이름 공간은 [plugins.md §3](plugins.md) R1·R9 |
 | `J` | number \| null | 1 | 결합 목적함수. 실패 시 페널티 값 |
 | `J_components` | object | 1 | `{test_key: {response_key: {elastic, plastic, shortfall, scalar}}}` |
@@ -309,7 +324,7 @@ multipart 필드:
 | `failed` | 예 | §7.3 실행 오류. 해석 개별 실패는 페널티로 처리하고 잡을 실패시키지 않는다 |
 | `cancelled` | 예 | 취소 완료 |
 
-- `phase`(running 하위 표시, 상태 아님): `preprocess` → `elastic` → `plastic`(탄성 전용 잡은 생략) → `diagnostics` → `finalize`. 상태 enum은 plan 그대로 5개로 고정하고 세부는 `phase`로만 늘린다.
+- `phase`(running 하위 표시, 상태 아님): `preprocess` → `elastic` → `plastic`(탄성 전용 잡은 생략) → `diagnostics` → `finalize`(결과 테이블 확정·왕복 검사) → `explicit_check`(옵션, 왕복 검사 이후) → 결과 저장. 상태 enum은 plan 그대로 5개로 고정하고 세부는 `phase`로만 늘린다.
 - 워커 재시작 시 `running`으로 남은 잡은 `failed`(`WORKER_LOST`)로 바꾼다. 재개(restore)는 1차 범위 밖이며 최적화기 `state()/restore()` 계약으로 확장 지점만 둔다.
 
 ## 6. artifact 규칙
@@ -407,6 +422,7 @@ multipart 필드:
 | | `SOLVER_ANALYSIS_UNSUPPORTED` | 레시피 해석 모드를 솔버가 지원 안 함 |
 | | `FRICTION_IDENTIFY_UNSUPPORTED` | |
 | 예산 | `BUDGET_EXCEEDS_LIMIT` | |
+| explicit 검사 | `EXPLICIT_CHECK_UNAVAILABLE`, `EXPLICIT_CHECK_SECTION_INVALID` | §4.6.1 |
 | 식별성 | `IDENTIFIABILITY_UNDERDETERMINED` | 사전 점검 실패(`identifiability.precheck_mode=reject`일 때). [testspec.md §9](testspec.md) |
 
 새 코드는 MINOR 버전에서 추가될 수 있다. 클라이언트는 모르는 코드를 일반 검증 실패로 처리해야 한다.

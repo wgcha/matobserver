@@ -121,6 +121,8 @@ MatNexus `elastic` 블록은 온도별 행을 가질 수 있으나 이 SW는 온
 | `roundtrip` | object | §4.9 |
 | `warnings` | `Warning[]` | §4.10 |
 | `traceability` | object | §4.11 |
+| `explicit_check` | object | §4.12 (옵션 검사, 꺼져 있으면 `{"enabled": false}`) |
+| `rate` | object | §4.13 기준 변형률속도·속도 의존 여부 |
 
 ### 4.1 `TestSummary`
 
@@ -140,7 +142,7 @@ MatNexus `elastic` 블록은 온도별 행을 가질 수 있으나 이 SW는 온
 
 ### 4.2 `Assumption`
 
-`{code, text}`. 항상 포함: `J2_ISOTROPIC_HARDENING`(J2 등방경화), `RATE_INDEPENDENT`(속도 무관), `TEMPERATURE_INDEPENDENT`, `POISSON_RATIO_INPUT`(ν 입력값), `NO_DAMAGE`(파단·손상 미포함). 조건부: `ISOTROPIC_EQUIVALENT`(모드 A, 등가 등방성), `RIGID_JIG`(지그 강체), `COMPLIANCE_FROM_RECIPE`, `ELASTIC_ONLY`(취성 재료 E만), `FRICTION_FIXED`.
+`{code, text}`. 항상 포함: `J2_ISOTROPIC_HARDENING`(J2 등방경화), `RATE_INDEPENDENT`(속도 무관 — 근거 값은 `metadata.rate.reference_strain_rate_1_s`, §4.13), `TEMPERATURE_INDEPENDENT`, `POISSON_RATIO_INPUT`(ν 입력값), `NO_DAMAGE`(파단·손상 미포함). 조건부: `ISOTROPIC_EQUIVALENT`(모드 A, 등가 등방성), `RIGID_JIG`(지그 강체), `COMPLIANCE_FROM_RECIPE`, `ELASTIC_ONLY`(취성 재료 E만), `FRICTION_FIXED`.
 
 ### 4.3 `residuals`
 
@@ -239,7 +241,7 @@ Verifier 기능을 결과 확정 단계에서 자동 실행: 슬롯별 `card_blo
 
 ### 4.10 `Warning`
 
-`{code, message, test_key?, slot?, run_id?, param?}`. 1차 경고 코드: `COMPLIANCE_MISSING`, `COMPLIANCE_INSTRUMENT_MISMATCH`, `COMPLIANCE_NONMONOTONIC`, `DENSITY_DEFAULTED`, `PARAM_AT_BOUND`, `IDENTIFIABILITY_LOW_DATA`, `HIGH_CORRELATION`, `INSENSITIVE_PARAM`, `ILL_CONDITIONED`, `DIAGNOSTICS_SKIPPED`, `TABLE_NODES_BEYOND_VALID_RANGE`, `ROUNDTRIP_FAILED`, `WALL_TIME_REACHED`, `FALLBACK_EXPLICIT_USED`, `KE_RATIO_HIGH`, `BEAM_THEORY_APPROXIMATE`, `MESH_COARSENED`, `SYMMETRY_IGNORED_STP`, `PARAM_OVERRIDES_SPECIMEN`, `RECIPE_WARNINGS`(레시피 검증 경고 승계). 새 코드는 MINOR에서 추가.
+`{code, message, test_key?, slot?, run_id?, param?}`. 1차 경고 코드: `COMPLIANCE_MISSING`, `COMPLIANCE_INSTRUMENT_MISMATCH`, `COMPLIANCE_NONMONOTONIC`, `DENSITY_DEFAULTED`, `PARAM_AT_BOUND`, `IDENTIFIABILITY_LOW_DATA`, `HIGH_CORRELATION`, `INSENSITIVE_PARAM`, `ILL_CONDITIONED`, `DIAGNOSTICS_SKIPPED`, `TABLE_NODES_BEYOND_VALID_RANGE`, `ROUNDTRIP_FAILED`, `WALL_TIME_REACHED`, `FALLBACK_EXPLICIT_USED`, `KE_RATIO_HIGH`, `BEAM_THEORY_APPROXIMATE`, `MESH_COARSENED`, `SYMMETRY_IGNORED_STP`, `PARAM_OVERRIDES_SPECIMEN`, `RECIPE_WARNINGS`(레시피 검증 경고 승계), `EXPLICIT_CHECK_DEVIATION`, `EXPLICIT_CHECK_KE_HIGH`, `EXPLICIT_CHECK_FAILED`, `EXPLICIT_CHECK_SKIPPED`(§4.12), `RATE_DEPENDENCE_NOT_IDENTIFIED`, `REFERENCE_RATE_UNKNOWN`(§4.13). 새 코드는 MINOR에서 추가.
 
 ### 4.11 `traceability`
 
@@ -267,6 +269,58 @@ Verifier 기능을 결과 확정 단계에서 자동 실행: 슬롯별 `card_blo
 | `config_hash` | 식별 결과에 영향을 주는 설정 하위집합(`alignment.*`, `objective.*`, `engine.*`, `identifiability.*`, `material.*`, `result.*`, `cases.*`, `testspec.*`, `solver.implicit.*`, `solver.explicit.*`, `solver.d3plot_frames`) 정규화 JSON sha256. 경로·토큰·코어 수 제외 |
 | `solver.solver_version` | 최적점 해석 d3hsp에서 읽은 문자열 |
 
+### 4.12 `explicit_check` — explicit 재현 검사 (1차 옵션)
+
+왕복 검사(§4.9) 이후 최종 카드를 낙하 모델과 같은 요소 정식화·explicit(질량 스케일링 금지, 준정적 속도)로 1회 재실행한 결과. 규칙은 [testspec.md §8.1](testspec.md). 임계값 초과는 경고만.
+
+```json
+{
+  "enabled": true,
+  "settings": {"elform": 1, "hourglass": {"ihq": 6, "qm": 0.1}, "loading_velocity_m_s": 0.5,
+               "max_ke_ratio": 0.05, "max_region_error": 0.05, "max_peak_rel_diff": 0.05, "mass_scaling": false},
+  "per_case": [
+    {"test_key": "t1", "case_id": "t1-c1", "status": "ok",
+     "run_state": "normal", "ke_ie_ratio_max": 0.012,
+     "vs_implicit":   {"elastic": 0.018, "plastic": 0.026, "peak_force_rel_diff": -0.011, "shortfall": 0.0},
+     "vs_experiment": {"elastic": 0.021, "plastic": 0.041, "peak_force_rel_diff": -0.017, "shortfall": 0.0},
+     "within_tolerance": true,
+     "artifact_ids": {"explicit_check": "art_...", "explicit_check_curves": "art_..."}}
+  ],
+  "warnings": []
+}
+```
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `per_case[].status` | `ok` \| `deviation` \| `failed` \| `skipped` | `deviation` = 임계값 초과(경고 `EXPLICIT_CHECK_DEVIATION`) |
+| `vs_implicit`, `vs_experiment` | object | 구간별 정규화 오차 e_k(1), 피크 하중 상대차(1), 범위 부족 비율(1) |
+| `ke_ie_ratio_max` | number | GLSTAT 운동/내부 에너지 비 최대 |
+| `skip_reason` | string \| null | `skipped`일 때: `no_explicit_controls` \| `mass_scaling` \| `adapter_unsupported` |
+
+### 4.13 `rate` — 기준 변형률속도와 속도 의존
+
+```json
+{
+  "reference_strain_rate_1_s": {"per_run": [{"run_id": "6f1c...", "value": 1.9e-3, "velocity_source": "condition.test_speed",
+                                           "formula": "6*h*V/L^2", "inputs": {"h": 0.004, "V": 3.3e-5, "L": 0.064}}],
+                                "per_test": [{"test_key": "t1", "median": 1.9e-3, "min": 1.8e-3, "max": 2.0e-3}],
+                                "overall_range": [1.8e-3, 2.0e-3]},
+  "rate_dependence_identified": false,
+  "rate_model": null,
+  "rate_coefficients": null,
+  "identified_rate_range_1_s": null,
+  "advisory": {"code": "RATE_DEPENDENCE_NOT_IDENTIFIED",
+               "message": "속도 의존을 식별하지 않았다. 기준 변형률속도보다 크게 빠른 동적(낙하·충격) 해석에 쓰면 응력을 과소평가할 수 있다"}
+}
+```
+
+| 필드 | 규칙 |
+| --- | --- |
+| `reference_strain_rate_1_s` | TestSpec `reference_strain_rate()`(bending: 6hV/L², [testspec.md §10.6](testspec.md)) run별 값과 시험별 요약. 계산 불가 run은 `value: null` + 경고 `REFERENCE_RATE_UNKNOWN` |
+| `rate_dependence_identified` | 1차·2차 항상 false → 경고 `RATE_DEPENDENCE_NOT_IDENTIFIED`를 `warnings`와 `advisory`에 함께 기록(동적 해석 적용 시 주의) |
+| `rate_model`, `rate_coefficients`, `identified_rate_range_1_s` | 1차 null. **n차 확장 지점**: 고속 TestSpec이 같은 필드를 채운다(`rate_model: "cowper_symonds"`, `rate_coefficients: {cs_d, cs_p}` — `card_blocks.rate_table.values`와 같은 키, 또는 `"table"` + `rate_table.rows`) |
+| ADR 0026 | `EstimatedProperty.valid_range.rate = overall_range` |
+
 ## 5. 2차 산출물
 
 LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifact `card_lsdyna`, 슬롯별). 키워드는 SolverAdapter의 재료 writer가 쓰며 *MAT_001(탄성 전용) 또는 *MAT_024 + *DEFINE_CURVE(LCSS)이고 단위계는 mm·N·s·tonne(덱 머리 주석에 명시). 타 솔버 카드는 MatNexus 렌더러가 `card_blocks`로 만든다.
@@ -290,6 +344,8 @@ LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifac
 | `deck_best` | application/zip | 케이스 | 최적점 실행 폴더(덱·include·binout·d3hsp·messag, d3plot은 `solver.keep_d3plot`에 따라) |
 | `mesh` | text/plain (.k) | 케이스 | `mo_specimen.k` |
 | `roundtrip` | application/zip | 슬롯 | 1요소 왕복 덱·결과 |
+| `explicit_check` | application/zip | 케이스 | explicit 재현 검사 실행 폴더(덱·binout·d3hsp·glstat, d3plot 제외) |
+| `explicit_check_curves` | text/csv | 케이스 | 열: `x_m, f_exp_N, f_implicit_N, f_explicit_N, region` (같은 격자) |
 | `identifiability_json` | application/json | 잡 | 진단 전체(S, 상관행렬 원값) |
 | `verification_bundle` | application/zip | 레시피 | 레시피 dry-run 결과(레시피 API 전용) |
 
@@ -344,7 +400,7 @@ LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifac
 | `EstimatedProperty.member_position` | 슬롯 `member_position` | |
 | `EstimatedProperty.property_key` / `value_si` / `dimension` | `youngs_modulus` / `card_blocks.elastic.youngs_modulus` / `stress` | 테이블은 ADR에 자리 없음 → 카드 블록 `table`로 별도 반입(협의) |
 | `EstimatedProperty.uncertainty` | `{kind: "stdev", value, n, method}` ← `metadata.uncertainty.statistics` | |
-| `EstimatedProperty.valid_range` | `{temperature: [T_min, T_max] (runs 조건), plastic_strain: [0, εp_valid]}` | `plastic_strain`은 ADR 예시에 없는 확장 키 |
+| `EstimatedProperty.valid_range` | `{temperature: [T_min, T_max] (runs 조건), rate: metadata.rate.reference_strain_rate_1_s.overall_range, plastic_strain: [0, εp_valid]}` | `plastic_strain`은 ADR 예시에 없는 확장 키 |
 
 ## 8. 가정·미결
 

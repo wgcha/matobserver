@@ -291,6 +291,13 @@ class SolverCapabilities:
     material_keywords: frozenset[str]    # {"MAT_001", "MAT_024"} — NeutralMaterial을 쓸 수 있는 키워드
     extension_keys: frozenset[str]       # 해석 가능한 NeutralMaterial.extensions 키
     unit_system: str                     # 파일 단위계 "mm-N-s-tonne"
+    supports_overrides: bool             # RunOverrides(요소 정식화·hourglass·질량 스케일링 금지) 지원 — explicit 재현 검사 필요조건
+
+@dataclass(frozen=True)
+class RunOverrides:                      # explicit 재현 검사용 실행 덮어쓰기 (testspec.md §8.1)
+    section_by_slot: Mapping[str, Mapping[str, Any]]   # slot → {elform, hourglass: {ihq, qm}}; mo_mat_<slot>.k의 *SECTION·*HOURGLASS·PART HGID로 씀
+    forbid_mass_scaling: bool            # True면 제어 파일에 DT2MS≠0이 있을 때 prepare가 IncompatibleOverride 예외(덱 수정 안 함)
+    engine_params_si: Mapping[str, float] | None = None # 덮어쓸 mo_* (예: 검사 속도로 다시 계산한 mo_tend, mo_dtout)
 
 @runtime_checkable
 class SolverAdapter(Protocol):
@@ -299,7 +306,9 @@ class SolverAdapter(Protocol):
     def __init__(self, options: Mapping[str, Any]) -> None: ...
     def capabilities(self) -> SolverCapabilities: ...
     def prepare(self, case: SimulationCase, materials: Mapping[str, NeutralMaterial],
-                workdir: Path, mode: Literal["implicit", "explicit"] | None = None) -> PreparedRun: ...
+                workdir: Path, mode: Literal["implicit", "explicit"] | None = None,
+                overrides: RunOverrides | None = None) -> PreparedRun: ...
+        # overrides가 있으면 mode="explicit" 고정, implicit→explicit fallback 없음
     def run(self, prepared: PreparedRun, ncpu: int, timeout_s: float,
             cancel: CancelToken) -> RunStatus: ...
     def extract(self, prepared: PreparedRun, status: RunStatus) -> Extracted: ...
@@ -521,9 +530,21 @@ class TestSpec(Protocol):
     def reference_points(self, manifest: Mapping[str, Any]) -> tuple[ReferencePointRequest, ...]: ...
     def initial_hints(self, data: Sequence[TestData], geometry: GeometrySpec,
                       params_si: Mapping[str, float]) -> Mapping[str, float]: ...
+    def reference_strain_rate(self, data: TestData, geometry: GeometrySpec,
+                              params_si: Mapping[str, float]) -> RateInfo: ...
+        # 공칭 기준 변형률속도 ε̇_ref (testspec.md §10.6). 계산식은 TestSpec 소관
     def engine_params(self, window: Mapping[str, float], mode: Literal["implicit", "explicit"],
                       mesh: MeshResult) -> Mapping[str, float]: ...
         # mo_dend, mo_tend, mo_htop, mo_hbot (SI)만. mo_dtout/mo_dtplt/mo_dtmax는 엔진이 계산 (testspec.md §5 7단계)
+```
+
+```python
+@dataclass(frozen=True)
+class RateInfo:
+    value_1_s: float | None              # 계산 불가면 None (경고 REFERENCE_RATE_UNKNOWN)
+    formula: str                         # 예 "6*h*V/L^2"
+    inputs: Mapping[str, float]          # {"h": m, "V": m/s, "L": m}
+    velocity_source: Literal["condition.test_speed", "time_channel", "none"]
 ```
 
 정렬·재샘플링·목적함수는 엔진 공통 기능이며 TestSpec은 응답 정의와 데이터 매핑만 제공한다([testspec.md](testspec.md)).
@@ -560,6 +581,7 @@ class TestSpec(Protocol):
 | S9 | `CancelToken` 설정 → `poll_interval_s`+grace 내 `CANCELLED` | 통과 |
 | S10 | `cleanup`이 작업 폴더 밖 삭제 없음, keep 단계별 남는 파일이 매핑표와 일치 | 0건, 일치 |
 | S11 | `single_element_uniaxial`: MAT_024 테이블 입력 → 출력 응력이 입력 테이블 재현 | 최대 상대오차 ≤ `verify.roundtrip_tol` |
+| S12 | `supports_overrides=True`면 `RunOverrides` 반영(*SECTION elform·*HOURGLASS·HGID가 덱에 기록), 질량 스케일링 제어 파일 + `forbid_mass_scaling` → `IncompatibleOverride`, explicit 고정·fallback 없음 | 통과 |
 
 ### 5.3 MaterialModel
 
@@ -601,6 +623,7 @@ class TestSpec(Protocol):
 | T5 | 합성 선형 곡선(보 이론)에서 `initial_hints["E0"]` 복원 | 상대오차 ≤ 1e-3 |
 | T6 | `map_run`이 컴플라이언스를 적용하지 않음(x = 원 채널, `compliance_m_per_n` 전달) — 이중 적용 방지 | x 비트 동일 |
 | T8 | `param_space()`가 ParamSpace를 돌려주고(bending은 빈 공간) `param_targets()` 키와 일치 | 통과 |
+| T9 | `reference_strain_rate`: bending 합성 입력(h, V, L)에서 6hV/L² 일치, test_speed 없고 time 채널 있으면 시간 채널 추정, 둘 다 없으면 `value_1_s=None` | 상대오차 ≤1e-12 / 규칙 일치 |
 | T7 | 결정성 | 동일 |
 
 ## 6. 가정·미결
@@ -616,4 +639,5 @@ class TestSpec(Protocol):
 | P-7 | 플러그인 등록 조건(계약 테스트 통과)은 CI·Verifier 단계에서 강제, 런타임은 인터페이스 형태만 검사 | 가정 |
 | P-8 | 비재료 식별 변수는 TestSpec이 공급하고 이름 공간 `_test.{test_key}.`로 θ에 합류(1차 빈 공간) | 가정 |
 | P-9 | 탄성 단계는 identify 슬롯을 탄성 전용 카드로 해석 | 가정 |
+| P-10 | explicit 재현 검사는 `prepare(..., overrides=RunOverrides)` 한 경로로 처리(새 모드 없음). 질량 스케일링이 있는 레시피는 덱을 고치지 않고 검사 불가로 처리 | 가정 |
 | U-1 | 탄소성 기본 모드(coeff/table)와 기본 경화식 — 사용자 결정 대기. 현재 기본값(`engine.default_plasticity_mode`, `material.mat024_coeff.default_law`=`swift`) 유지 | 미결 |

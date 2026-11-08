@@ -164,6 +164,21 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | 케이스 공유 | 같은 케이스(§9.1)의 run들은 하나의 해석 곡선과 각자 비교 | — |
 | 스칼라 하한 | 0 나눗셈 방지 | `objective.scalar_floor`(1e-12) |
 
+### 8.1 explicit 재현 검사 (1차 옵션, 경고 전용)
+
+| 항목 | 규칙 | 설정 키(기본) |
+| --- | --- | --- |
+| 실행 조건 | 요청 `explicit_check.enabled` 또는 `verify.explicit_check.enabled`(false). 대상 시험 `explicit_check.tests`(생략 시 전체) | `verify.explicit_check.enabled` |
+| 위치 | `phase=finalize`의 왕복 검사(result.md §4.9) **이후**, 결과 저장 전. 식별 θ는 바꾸지 않음(검사만) | — |
+| 카드 | 최종 슬롯 카드(`card_blocks`, 탄소성 테이블 포함) 그대로 | — |
+| 요소 정식화 | `RunOverrides.section_by_slot`: elform·hourglass를 낙하 모델과 같게(예: 저감적분 hex ELFORM 1 + IHQ 6). 시편 메시는 케이스의 기존 메시 재사용(topology와 elform이 맞지 않으면 사전 400) | `verify.explicit_check.elform`(1), `verify.explicit_check.hourglass.ihq`(6), `verify.explicit_check.hourglass.qm`(0.1) |
+| 해석 | explicit 고정, fallback 없음, **질량 스케일링 금지**(`forbid_mass_scaling=True`). 하중 경로: mo_dend 같음, mo_tend = mo_dend / v_chk, mo_dtout = 정렬 7단계를 같은 격자로 다시 계산 | `verify.explicit_check.loading_velocity_m_s`(0.5), `verify.explicit_check.run_timeout_s`(null → `solver.run_timeout_s`) |
+| 준정적 확인 | `glstat_ratio`(KE/IE) 최대 > 상한이면 경고 `EXPLICIT_CHECK_KE_HIGH`(지표는 그대로 기록) | `verify.explicit_check.max_ke_ratio`(0.05) |
+| 지표 | 같은 격자·정렬 규칙(§5)으로 두 비교를 낸다: `vs_implicit`(기준 = implicit 최적점 해석 곡선), `vs_experiment`(기준 = 시험 곡선). 각각 구간별 e_k(§8 식, 기준 곡선을 F_exp 자리에) + 피크 하중 상대차 ΔF_peak = (F_peak,exp − F_peak,ref)/F_peak,ref(비교 구간 내 최대값) | — |
+| 판정 | `vs_implicit`의 max(e_elastic, e_plastic) > `max_region_error` 또는 \|ΔF_peak\| > `max_peak_rel_diff`이면 경고 `EXPLICIT_CHECK_DEVIATION`. **거절·실패 없음** | `verify.explicit_check.max_region_error`(0.05), `verify.explicit_check.max_peak_rel_diff`(0.05) |
+| 실패 | 비정상 종료·시간 초과 → 경고 `EXPLICIT_CHECK_FAILED`(부분 곡선이 있으면 지표 + shortfall 기록). 실행 불가(어댑터 `supports_overrides=False`, 질량 스케일링 등) → `EXPLICIT_CHECK_SKIPPED` | — |
+| 예산 | `budget.max_evaluations` 밖. history `stage=explicit_check` | — |
+
 ## 9. 케이스·식별성
 
 ### 9.1 시뮬레이션 케이스
@@ -250,6 +265,17 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | `sigma_y0` | 3·F(x_e)·L / (2·b·h²) | 외층 응력 |
 | `eps_p_max0` | max(6·h·X_u/L² − sigma_y0/E0, `testspec.bending.min_eps_p0`(0.01)) | 테이블 노드 상한 참고 |
 
+### 10.6 기준 변형률속도 `reference_strain_rate()`
+
+결과의 「속도 무관」 가정을 구체화하기 위한 공칭 기준 변형률속도 ε̇_ref. 계산식은 TestSpec 소관이며 엔진은 run별 값을 모아 결과 `metadata.rate`([result.md §4.13](result.md))에 기록한다.
+
+| 항목 | bending 규칙 |
+| --- | --- |
+| 식 | ε̇_ref = 6·h·V / L² (외층 공칭 변형률 ε = 6hδ/L²의 시간 미분) [1/s] |
+| h, L | 시편 두께 `thickness`, 지지 스팬 `span` (SI) |
+| V | MatNexus 조건 `test_speed`[m/s] 우선(`velocity_source="condition.test_speed"`). 없고 `time` 채널이 있고 `testspec.bending.rate_from_time_channel`(true)이면 하중 구간에서 dδ/dt의 중앙값(`time_channel`). 둘 다 없으면 None + 경고 `REFERENCE_RATE_UNKNOWN` |
+| layered_box / stp | h = 하중 방향 바운딩 박스 높이(`top_z_at_load_m − bottom_z_m`) |
+
 ## 11. 확장 지점 (계약만, 구현 안 함)
 
 | 단계 | TestSpec | 추가될 것 | 기존 계약에 미치는 영향 |
@@ -258,6 +284,8 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | 2차 | `bending` 4점 | `load_span` 허용, 레시피 jig 생성기 `jig.bending4p_rollers` | `TEST_VARIANT_UNSUPPORTED` 해제 |
 | n차 | `*_dynamic`(고속) | `axis=time`, 필터 `cfc`, `time_shift` 보조 변수, `analysis_mode=dynamic`(공칭 변형률속도 > `testspec.dynamic.rate_threshold_1_s`이면 explicit), 질량 스케일링 금지(`glstat_ratio` ≤ `solver.explicit.max_ke_ratio`), 경계조건 초기속도·질량(`mo_v0`, `mo_mass` 예약), 유사도 옵션 `objective.similarity: l2 | iso18571`, 재료 단계 `rate`(Cowper–Symonds `C`,`p` 또는 속도별 테이블) → `rate_table` 블록 | 모두 추가 |
 | n차 | `generic` | 사용자 지그 덱(레시피 고정형)과 응답 정의만으로 실행. 매핑은 레시피 매니페스트 `test_type` + `responses` | 없음 |
+
+n차 고속 TestSpec은 같은 `reference_strain_rate()`로 시험별 ε̇를 내고, 속도 계수 식별 결과를 `metadata.rate`의 같은 필드(`rate_dependence_identified=true`, `rate_model`, `rate_coefficients`, `identified_rate_range_1_s`)에 채운다. 1차 필드 구조는 바꾸지 않는다.
 
 ## 12. 가정·미결
 
@@ -270,4 +298,6 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | T-4 | 다중 run 결합은 run별 J의 산술평균(평균 곡선을 만들지 않음) — run별 잔차·시편별 통계를 남기기 위함 | 가정 |
 | T-5 | 식별성 사전 점검 실패 시 거절/경고 — 사용자 결정 대기. 현재 기본값 `reject` 유지(설정 `identifiability.precheck_mode`) | 미결 |
 | T-6 | 사후 진단 차분 평가는 예산(`max_evaluations`) 밖 별도 상한 | 가정 |
+| T-8 | explicit 재현 검사 기본값(ELFORM 1, IHQ 6, QM 0.1, 0.5 m/s, KE/IE 0.05, 구간 오차·피크 5%)은 초기값. 낙하 모델 설정과 맞춰 조정 | 가정 |
+| T-9 | 기준 변형률속도 bending 식 6hV/L², V는 test_speed 우선 | 가정 |
 | U-1 | 성공 기준 오차 임계값 미정 — 결과의 `metadata.residuals`로 판정 가능하도록만 계약 | 미결 |

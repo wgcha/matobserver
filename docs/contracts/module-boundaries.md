@@ -34,6 +34,7 @@ matobserver/
 │   ├── engine/                            # Impl-Optim: 식별 엔진(단계·θ 조립·목적함수·정렬·케이스·식별성·불확도·결과 조립)
 │   │   ├── run.py                         #   run_calibration() 진입점(§4.1)
 │   │   ├── roundtrip.py                   #   1요소 왕복 검사(result.md §4.9, §4.6)
+│   │   ├── explicit_check.py              #   explicit 재현 검사(testspec.md §8.1, result.md §4.12)
 │   │   ├── alignment.py                   #   testspec.md §5
 │   │   ├── objective.py                   #   testspec.md §8
 │   │   ├── identifiability.py             #   testspec.md §9
@@ -172,6 +173,7 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 ├── evals/{eval_index:05d}/{case_id}/   덱·mo_*.k·binout·d3hsp·messag(·d3plot)              — Solver
 ├── best/{case_id}/    최적점 실행 폴더 사본                                                  — Engine
 ├── roundtrip/{slot}/  1요소 왕복                                                           — Solver
+├── explicit_check/{case_id}/   explicit 재현 검사 실행 폴더                                  — Solver
 └── artifacts/         다운로드 대상 파일                                                    — Backend 등록
 ```
 
@@ -185,6 +187,7 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | --- | --- | --- | --- | --- |
 | 1요소 단축 실행 | `SolverAdapter.single_element_uniaxial(material: NeutralMaterial, strain_max: float, workdir: Path, timeout_s: float) -> CurveData` | Impl-Solver(`lsdyna`), Impl-Optim(`surrogate_beam`: 해석적 반환) | 엔진 | 엔진 → Protocol |
 | 왕복 검사 | `engine.roundtrip.check(slot: str, material: NeutralMaterial, adapter: SolverAdapter, workdir: Path, strain_max: float, tol: float) -> Mapping[str, Any]` (반환 = result.md §4.9 `per_slot` 원소) | Impl-Optim(`engine/roundtrip.py`) | `engine.run` finalize 단계 | 엔진 → Protocol. `verify/`를 import하지 않음 |
+| explicit 재현 검사 | `engine.explicit_check.run(case: SimulationCase, materials: Mapping[str, NeutralMaterial], implicit_best: Extracted, exp: Sequence[TestData], adapter: SolverAdapter, overrides: RunOverrides, workdir: Path, cfg: Config) -> Mapping[str, Any]` (반환 = result.md §4.12 `per_case` 원소). 내부에서 `adapter.prepare(..., mode="explicit", overrides=...)` → `run` → `extract`, 지표는 `align_pair`·`curve_error` | Impl-Optim(`engine/explicit_check.py`), 어댑터 쪽 `RunOverrides` 처리는 Impl-Solver | `engine.run` finalize 단계, 왕복 검사 이후 | 엔진 → Protocol |
 | 곡선 정렬 | `engine.alignment.align_pair(exp: CurveData, sim: CurveData, response: ResponseDef, cfg: Config, *, compliance_m_per_n: float \| None = None) -> AlignedPair` (`AlignedPair`: 격자 x, f_exp, f_sim, region 라벨, shortfall) | Impl-Optim | 엔진, `verify/` | `verify` → `engine`(순수 함수만). 역방향 금지 |
 | 곡선 오차 | `engine.objective.curve_error(pair: AlignedPair, region_weights: Mapping[str, float], cfg: Config) -> float` | Impl-Optim | 엔진, `verify/` | 같음 |
 | 레시피 기대 곡선 검사 | `verify.recipe_checks.check_reference_curve(curve: CurveData, reference_csv: Path, response: ResponseDef, cfg: Config) -> Mapping[str, Any]` (반환 = recipe.md §7.3 `checks[]` 원소, code `VERIFY_REFERENCE_CURVE`) | Impl-Solver | `verify_recipe` | `verify` → `engine.alignment`/`engine.objective` |
@@ -220,6 +223,7 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | S-8 | 레시피 dry-run 검사 각 코드(recipe.md §7.2) PASS/FAIL 픽스처 | 판정 일치 |
 | S-9 | `single_element_uniaxial`(계약 S11) 및 `check_reference_curve`(§4.6) | 입력 테이블 ≤1% 재현, 기대 곡선 판정 일치 |
 | S-10 | implicit 제어 `&mo_dtmax` 반영, keep 매핑표대로 정리 | 생성 덱·남은 파일 일치 |
+| S-11 | 계약 S12(`RunOverrides`): ELFORM 1 + IHQ 6 덱 생성, 질량 스케일링 제어 → `IncompatibleOverride`, 샘플 굽힘 덱 explicit 실행 KE/IE 기록 | 통과 |
 
 ### 5.3 Impl-Optim
 
@@ -238,6 +242,8 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | O-11 | 탄성 단계에서 솔버로 넘어가는 identify 슬롯 카드의 `table`이 None | 통과 |
 | O-12 | 비재료 파라미터 경로(R9): 가짜 TestSpec이 `_test.t1.mu`를 내면 θ에 합류하고 레시피 `fric`로 전달 | 통과 |
 | O-13 | `engine.roundtrip.check`, `align_pair`/`curve_error` 공개 함수(§4.6) | 시그니처·반환 형식 일치 |
+| O-14 | explicit 재현 검사(가짜 어댑터): 단계 순서(왕복 이후), 지표 계산, 임계값 초과 시 경고만·잡 성공, 실패·건너뜀 코드 | 일치 |
+| O-15 | 기준 변형률속도 집계(T9 값 → result.md §4.13), `RATE_DEPENDENCE_NOT_IDENTIFIED` 항상 기록 | 일치 |
 
 ### 5.4 Impl-Backend
 
@@ -284,11 +290,11 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | `objective` | `region_weights`, `shortfall_penalty`, `failed_run_J`, `scalar_floor`, (n차 예약) `similarity` | testspec.md §8 |
 | `cases` | `dimension_merge_rel_tol` | testspec.md §9.1 |
 | `identifiability` | `precheck_mode`, `min_points_per_param`, `post_fit`, `fd_step_rel`, `max_extra_evals`, `corr_threshold`, `min_sensitivity`, `max_condition` | testspec.md §9 |
-| `testspec.bending` | `prefer_deflection`(기본 false — 크로스헤드 기본, 결정 2026-11-08), `min_span_ratio`, `beam_theory_span_ratio`, `overtravel_ratio`, `min_eps_p0` | testspec.md §10 |
+| `testspec.bending` | `prefer_deflection`(기본 false — 크로스헤드 기본, 결정 2026-11-08), `min_span_ratio`, `beam_theory_span_ratio`, `overtravel_ratio`, `min_eps_p0`, `rate_from_time_channel`(true) | testspec.md §10 |
 | `material` | `default_density_kg_m3`, `default_E_range_pa`, `default_sigma_y_range_pa`, `mat024.max_strain`, `mat024_coeff.default_law`, `mat024_table.nodes` | plugins.md §4.3, api.md §4.3 |
 | `result` | `table_points`, `table_spacing`, `table_first_step`, `extrapolate_to_strain`, `extrapolation_method`, `at_bound_tol` | result.md §2–3 |
 | `uncertainty` | `per_specimen_refit`, `refit_max_evaluations` | result.md §4.4 |
-| `verify` | `roundtrip_enabled`, `roundtrip_tol`, `roundtrip_strain` | result.md §4.9 |
+| `verify` | `roundtrip_enabled`, `roundtrip_tol`, `roundtrip_strain`; `explicit_check.enabled`(false), `explicit_check.elform`(1), `explicit_check.hourglass.ihq`(6), `explicit_check.hourglass.qm`(0.1), `explicit_check.loading_velocity_m_s`(0.5), `explicit_check.max_ke_ratio`(0.05), `explicit_check.max_region_error`(0.05), `explicit_check.max_peak_rel_diff`(0.05), `explicit_check.run_timeout_s`(null) | result.md §4.9·§4.12, testspec.md §8.1 |
 
 `budget.default_max_evaluations`, `budget.max_evaluations_limit`, `default_max_wall_time_s`, `solver.run_timeout_s`는 plan 미결(해석 예산)이라 예시 파일에 자리표시값(`120`, `300`, `172800`, `3600`)과 주석 「미결」을 둔다.
 
@@ -330,6 +336,8 @@ decisions.md·plan.md 확정 사항이 어느 계약에 반영됐는지.
 | (plan) 등가 물성 메타(구성·하중 모드) | result.md §4.7 |
 | (plan) 대리모델 솔버 = 계약 테스트 기준 구현, 4는 대리모델로 먼저 검증 | plugins.md §2, 이 문서 §5.3 O-4·O-5 |
 | (plan) MatNexus 폴링(콜백 없음) | api.md §4.9 (E5 폴링) |
+| (사용자 승인 2026-11-08) explicit 재현 검사 1차 옵션, 경고 전용 | api.md §4.6.1, plugins.md §4.2 RunOverrides·S12, testspec.md §8.1, result.md §4.12, 이 문서 §4.6·§6 |
+| (사용자 승인 2026-11-08) 기준 변형률속도·속도 의존 미식별 표기, n차 확장 | plugins.md §4.5 RateInfo·T9, testspec.md §10.6·§11, result.md §4.13 |
 | (plan) 레시피 등록 검증 항목(dry-run, 관통, 메시 수렴, 질량 스케일링·감쇠·하드코딩 재료 경고) | recipe.md §7.2 |
 
 ## 8. 가정·미결
