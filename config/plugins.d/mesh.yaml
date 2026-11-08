@@ -1,4 +1,53 @@
 # 소유자: Impl-Mesh — geometry_mesher 플러그인 항목만 추가한다 (box, layered_box, stp, jig.bending3p_rollers).
 # 형식: docs/contracts/plugins.md §2. 다른 소유자의 항목을 이 파일에 쓰지 않는다.
+# defaults 의 품질·허용오차·지그 강체 값은 설정 mesh.* 기본값(module-boundaries.md §6)과 같다.
+# 엔진/백엔드가 설정값을 options 로 넘기면 그 값이 우선한다(defaults ← options).
 schema_version: "1.0"
-plugins: []
+plugins:
+  - type: geometry_mesher
+    name: box
+    class: "matobserver.mesh.box:BoxMesher"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      min_scaled_jacobian: 0.2
+      max_aspect_ratio: 10.0
+      volume_rel_tol_parametric: 1.0e-9
+
+  - type: geometry_mesher
+    name: layered_box
+    class: "matobserver.mesh.box:LayeredBoxMesher"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      min_scaled_jacobian: 0.2
+      max_aspect_ratio: 10.0
+      volume_rel_tol_parametric: 1.0e-9
+      layer_sum_rel_tol: 1.0e-3        # geometry.layer_sum_rel_tol
+
+  - type: geometry_mesher
+    name: stp
+    class: "matobserver.mesh.stp:StpMesher"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      min_scaled_jacobian: 0.2
+      max_aspect_ratio: 10.0
+      volume_rel_tol_stp: 0.01
+      gmsh_threads: 1                  # 결정성: 스레드 1 고정
+      stp_min_thickness_m: 1.0e-5      # 얇은 부위 판정(바디 특성 두께 2V/A) → STP_CHECK_FAILED
+      stp_min_edge_m: 1.0e-6           # 미소 모서리 판정 → STP_CHECK_FAILED
+      curvature_elements: 16           # gmsh Mesh.MeshSizeFromCurvature (2π 당 요소 수)
+
+  - type: geometry_mesher
+    name: jig.bending3p_rollers
+    class: "matobserver.mesh.jig:Bending3pRollersJig"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      rigid_E_pa: 2.1e11               # mesh.jig.rigid_E_pa
+      rigid_poisson: 0.3               # mesh.jig.rigid_poisson
+      rigid_density_kg_m3: 7850.0      # mesh.jig.rigid_density_kg_m3
+      shell_thickness_m: 1.0e-4        # 강체 셸 두께(접촉 두께)
+      contact_offset: true             # 셸 바깥면이 시편과 접하도록 중심을 t/2 이동(초기 간격 0)
+      min_segments: 24
