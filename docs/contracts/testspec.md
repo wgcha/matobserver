@@ -1,4 +1,4 @@
-schema_version: 1.0 · 상태: 초안 · 2026-11-08
+schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
 
 # TestSpec·응답 정의·정렬 규칙 계약
 
