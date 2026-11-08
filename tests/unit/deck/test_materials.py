@@ -124,3 +124,24 @@ def test_mat_rigid_roundtrip():
     text = "\n".join(["*KEYWORD", *mat_rigid_lines(1001, 2.1e11, 0.3, 7850.0), "*END"])
     r = read_materials(text)[1001]
     assert r.keyword == "MAT_020" and r.raw == {"ro": pytest.approx(7.85e-9), "e": 210000.0, "pr": 0.3}
+
+
+def test_s12_render_card_field_layout_matches_matnexus_dp600():
+    """module-boundaries S-12 (1.1): render_card 출력 *MAT_024 카드의 10칸 필드 배치가 MatNexus dp600 덱과 같다."""
+    from matobserver.solvers.lsdyna.adapter import LsDynaAdapter
+
+    src = read_materials(DP600.read_text())[1].material
+    text = LsDynaAdapter({}).render_card(src, SlotBinding("dp600", (1,), 1, 1, {}, 100), {"title": "DP600"})
+
+    def mat_cards(t):
+        b = next(b for b in kfile.parse_k(t) if b.name.startswith("MAT_PIECEWISE_LINEAR_PLASTICITY"))
+        assert not b.long_format
+        lines = b.lines[1:] if b.has_title() else b.lines
+        return [[kfile.to_float(f) for f in kfile.split_fields(ln)] for ln in lines[:4]]
+
+    ours, ref = mat_cards(text), mat_cards(DP600.read_text())
+    assert ours[0][:4] == ref[0][:4]  # mid ro e pr (칸 1–4)
+    assert ours[0][4] == 350.0 and ref[0][4] == 0.0  # SIGY: 표 첫 점(LCSS 우선이라 동치)
+    assert ours[1][2] == ref[1][2] == 100 and ours[1][4] == ref[1][4] == 1.0  # LCSS(칸 3), VP(칸 5)
+    assert ours[2] == [0.0] * 8 and ours[3] == [0.0] * 8 and ref[2] == ref[3] == [0.0] * 8  # 3·4번 카드 존재
+    assert read_materials(text)[1].material.table == src.table

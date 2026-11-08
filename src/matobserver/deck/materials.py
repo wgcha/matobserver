@@ -181,14 +181,18 @@ def slot_file_text(binding: SlotBinding, material: NeutralMaterial, *,
     return "\n".join(lines) + "\n"
 
 
-def card_text(material: NeutralMaterial, mid: int, lcid: int | None, *, slot: str, long_format: LongFormat = "auto") -> str:
-    """결과 artifact `card_lsdyna`(슬롯별 2차 산출물) 텍스트."""
+def card_text(material: NeutralMaterial, mid: int, lcid: int | None, *, slot: str, long_format: LongFormat = "auto",
+              title: str | None = None, header_comments: Sequence[str] = ()) -> str:
+    """결과 artifact `card_lsdyna`(슬롯별 2차 산출물) 텍스트. 머리 주석: 단위·슬롯·출처(header_comments)."""
     lines = [
         "*KEYWORD",
         f"$ matobserver card slot={slot} keyword={material_keyword(material)}",
         "$ Consistent units: mm - N - s - tonne (stress MPa, density tonne/mm^3)",
     ]
-    lines += mat_lines(material, mid, lcid, title=f"matobserver {slot}", long_format=long_format)
+    for c in header_comments:
+        for ln in str(c).splitlines() or [""]:
+            lines.append(("$ " + ln)[:80])
+    lines += mat_lines(material, mid, lcid, title=title or f"matobserver {slot}", long_format=long_format)
     lines.append("*END")
     return "\n".join(lines) + "\n"
 

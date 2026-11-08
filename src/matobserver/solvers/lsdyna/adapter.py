@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Mapping
@@ -36,11 +37,12 @@ from ...core.types import (
     RunState,
     RunStatus,
     SimulationCase,
+    SlotBinding,
     SolverCapabilities,
 )
 from ...core.units import UNIT_SYSTEM
 from ...deck.assemble import assemble
-from ...deck.materials import SUPPORTED_EXTENSIONS, check_extensions
+from ...deck.materials import SUPPORTED_EXTENSIONS, card_text, check_extensions
 from .binout import open_binout
 from .extract import SUPPORTED_EXTRACTORS, ExtractSettings, extract_case
 from .runner import RunnerSettings, run_batch
@@ -48,6 +50,7 @@ from .termination import initial_penetration_mm
 from . import single_element as se
 
 FALLBACK_DIR = "explicit"
+CARD_FORMAT = "lsdyna_k"  # (1.1) SolverCapabilities.card_format
 
 DEFAULT_DIVERGENCE_PATTERNS = (
     r"(?i)nonlinear solver failed",
@@ -141,7 +144,7 @@ class LsDynaAdapter:
 
     # ---- Protocol ----
     def capabilities(self) -> SolverCapabilities:
-        return SolverCapabilities(
+        kw: dict[str, Any] = dict(
             analysis_modes=frozenset({"implicit", "explicit"}),
             extractors=SUPPORTED_EXTRACTORS,
             material_keywords=frozenset({"MAT_001", "MAT_024"}),
@@ -149,6 +152,17 @@ class LsDynaAdapter:
             unit_system=UNIT_SYSTEM,
             supports_overrides=True,
         )
+        if "card_format" in {f.name for f in dataclasses.fields(SolverCapabilities)}:  # (1.1) core 반영 후
+            kw["card_format"] = CARD_FORMAT
+        return SolverCapabilities(**kw)
+
+    def render_card(self, neutral: NeutralMaterial, slot: SlotBinding, options: Mapping[str, Any] | None = None) -> str:
+        """(1.1) 결과 카드 렌더링 (plugins.md §4.2, 계약 S13). 결과 NeutralMaterial(유효 범위 절단·외삽 반영 후)을
+        그대로 쓴다 — 행을 더하거나 자르지 않는다. 덱 조립과 같은 writer(`deck.materials`), mid·lcid는 슬롯 바인딩 값."""
+        o = dict(options or {})
+        return card_text(neutral, int(slot.mid), slot.lcid, slot=slot.slot, title=o.get("title"),
+                         header_comments=tuple(o.get("header_comments") or ()),
+                         long_format=self.options.get("long_format", "auto"))
 
     def prepare(self, case: SimulationCase, materials: Mapping[str, NeutralMaterial], workdir: Path,
                 mode: Literal["implicit", "explicit"] | None = None,

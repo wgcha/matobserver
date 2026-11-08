@@ -362,3 +362,37 @@ def test_s12_run_overrides(h):
     ms_case, _ = h.inject(h.case(sub="ms"), "mass_scaling")
     with pytest.raises(IncompatibleOverride):
         a.prepare(ms_case, _mat(), h.tmp / "ov_ms", overrides=ov)
+
+
+def test_s13_render_card(h, plugin_name):
+    """(1.1) render_card: 결과 NeutralMaterial(절단·외삽 행 반영) → 카드 → .k 리더 재파싱 ≤1e-6, 마지막 행 보존.
+    card_format=None 이면 NotImplementedError."""
+    a = h.adapter()
+    caps = a.capabilities()
+    has_field = any(f.name == "card_format" for f in dataclasses.fields(caps))
+    fmt = getattr(caps, "card_format", None) if has_field else ("lsdyna_k" if plugin_name == "lsdyna" else None)
+    slot = ss.make_case("bending3p-param", h.tmp / "c13").slots[0]
+    # 유효 범위 0.05에서 절단 + 0.08까지 외삽한 결과 테이블을 흉내 낸 행
+    neutral = NeutralMaterial(ElasticBlock(2.3456789e9, 0.3812345, 1234.56789),
+                              (TableRow(0.0, 4.123456e7), TableRow(0.0123456, 4.81e7), TableRow(0.05, 5.98765e7),
+                               TableRow(0.08, 6.4321987e7)))
+    if fmt is None:
+        with pytest.raises(NotImplementedError):
+            a.render_card(neutral, slot, {"title": "x", "header_comments": []})
+        return
+    assert fmt == "lsdyna_k"
+    text = a.render_card(neutral, slot, {"title": "result body", "header_comments": ["job=job_x", "source=result"]})
+    assert "$ job=job_x" in text and "mm - N - s - tonne" in text and "slot=body" in text
+    from matobserver.deck.materials import read_materials
+
+    back = read_materials(text)[slot.mid].material
+    for f in ("youngs_modulus", "poisson_ratio", "density"):
+        assert getattr(back.elastic, f) == pytest.approx(getattr(neutral.elastic, f), rel=1e-6)
+    assert len(back.table) == len(neutral.table)
+    for r0, r1 in zip(neutral.table, back.table):
+        assert r1.plastic_strain == pytest.approx(r0.plastic_strain, rel=1e-6, abs=1e-12)
+        assert r1.true_stress == pytest.approx(r0.true_stress, rel=1e-6)
+    assert back.table[-1].plastic_strain == pytest.approx(0.08, rel=1e-12)
+    assert back.table[-1].true_stress == pytest.approx(6.4321987e7, rel=1e-12)
+    elastic = NeutralMaterial(neutral.elastic)
+    assert read_materials(a.render_card(elastic, slot, {}))[slot.mid].keyword == "MAT_001"
