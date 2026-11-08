@@ -1,0 +1,2 @@
+     |  Version : mpp s R12.0.0                      |
+ Normal termination

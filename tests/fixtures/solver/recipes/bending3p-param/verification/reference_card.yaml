@@ -1,0 +1,7 @@
+body:
+  elastic: {youngs_modulus: 2.0e9, poisson_ratio: 0.38, density: 1200.0}
+  table:
+    - {plastic_strain: 0.0, true_stress: 4.0e7}
+    - {plastic_strain: 0.01, true_stress: 4.8e7}
+    - {plastic_strain: 0.05, true_stress: 6.0e7}
+  rate_table: null

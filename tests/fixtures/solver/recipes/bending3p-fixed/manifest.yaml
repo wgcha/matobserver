@@ -1,0 +1,55 @@
+schema_version: "1.0"
+recipe_id: bending3p-fixed
+version: 1
+kind: fixed
+test_type: bending
+title: "fixture: 3-point bending, fixed in-house jig deck"
+unit_system: mm-N-s-tonne
+solver:
+  name: lsdyna
+  analysis: {primary: implicit, fallback: none}
+deck:
+  main: deck/main.k
+  controls:
+    implicit: deck/controls_implicit.k
+    explicit: deck/controls_explicit.k
+  files: [deck/jig.k, deck/contact.k]
+symmetry: {type: quarter, planes: [x0, y0], force_scale: 4.0}
+specimen:
+  geometry_kinds: [box]
+  element: {topology: hex8, target_size_m: 0.0005, min_elems_through_thickness: 2}
+  part_set_id: 900
+  node_sets: {sym_x0: 901, sym_y0: 902}
+  id_ranges: {node: [1, 4999999], element: [1, 4999999]}
+  placement: {length_axis: x, width_axis: y, load_axis: -z, origin: midspan_bottom, initial_gap: 0.0}
+material_slots:
+  - slot: body
+    regions: [specimen]
+    part_id: 1
+    mid: 101
+    secid: 101
+    lcid: 1101
+    section: {keyword: SECTION_SOLID, elform: 2}
+parameters:
+  - {name: span, type: R, dimension: length, unit_si: m, default: 0.064, range: [0.064, 0.064], matnexus_key: span}
+  - {name: fric, type: R, dimension: dimensionless, unit_si: "1", default: 0.2, range: [0.0, 0.6], matnexus_key: null}
+  - {name: nseg, type: I, dimension: dimensionless, unit_si: "1", default: 6, range: [1, 100], matnexus_key: null}
+responses:
+  - response_key: force_disp
+    test_channel: force
+    axis: displacement
+    extractor:
+      y: {name: rcforc_resultant, contact_id: 1, side: master, component: z, sign: -1, scale: symmetry}
+      x: {name: nodout_disp, node: {id: 6000001}, component: z, sign: -1}
+    alt_axes:
+      deflection:
+        x: {name: nodout_rel_disp, node: {ref: midspan_bottom}, ref_nodes: [{id: 6000031}], component: z, sign: -1}
+    weight: 1.0
+    window: {split: auto}
+compliance: null
+verification:
+  reference_card: verification/reference_card.yaml
+  reference_dimensions: {width: 0.010, thickness: 0.004, total_length: 0.080}
+  reference_window_m: 0.004
+  mesh_convergence: {size_factors: [1.0]}
+  reference_curve: verification/reference_curve.csv

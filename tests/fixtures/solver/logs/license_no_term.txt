@@ -1,0 +1,1 @@
+lmgrd is not running: License server machine is down or not responding.

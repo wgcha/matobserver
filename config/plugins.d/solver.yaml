@@ -1,4 +1,17 @@
 # 소유자: Impl-Solver — solver 플러그인 `lsdyna` 항목만 추가한다.
 # 형식: docs/contracts/plugins.md §2. (surrogate_beam은 optim.yaml, Impl-Optim 소유)
+# 환경별 값(배치 스크립트 경로·인자·코어 수)은 여기 두지 않는다 → 설정 solver.lsdyna.* (module-boundaries.md §6).
 schema_version: "1.0"
-plugins: []
+plugins:
+  - type: solver
+    name: lsdyna
+    class: "matobserver.solvers.lsdyna.adapter:LsDynaAdapter"
+    version: "1.0.0"
+    enabled: true
+    defaults:
+      # binout rcforc metadata `side` 값 ↔ 면 (실제 LS-DYNA binout으로 확인 필요 — U-1)
+      rcforc_side_codes: {slave: 0, master: 1}
+      # 재료 카드: 표준 10칸, 정밀도 손실 시 해당 키워드만 long 형식(` +`)
+      long_format: auto
+      single_element_stress_var: sig_xx
+      single_element_steps: 100

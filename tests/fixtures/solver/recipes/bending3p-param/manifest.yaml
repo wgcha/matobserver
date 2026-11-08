@@ -1,0 +1,64 @@
+schema_version: "1.0"
+recipe_id: bending3p-param
+version: 1
+kind: parametric
+test_type: bending
+title: "fixture: 3-point bending, parametric rollers, quarter symmetry"
+unit_system: mm-N-s-tonne
+solver:
+  name: lsdyna
+  analysis: {primary: implicit, fallback: explicit}
+deck:
+  main: deck/main.k
+  controls:
+    implicit: deck/controls_implicit.k
+    explicit: deck/controls_explicit.k
+  files: [deck/contact.k]
+symmetry: {type: quarter, planes: [x0, y0], force_scale: 4.0}
+specimen:
+  geometry_kinds: [box, layered_box, stp]
+  element: {topology: hex8, target_size_m: 0.0005, min_elems_through_thickness: 2, stp_topology: tet10}
+  part_set_id: 900
+  node_sets: {sym_x0: 901, sym_y0: 902}
+  id_ranges: {node: [1, 4999999], element: [1, 4999999]}
+  placement: {length_axis: x, width_axis: y, load_axis: -z, origin: midspan_bottom, initial_gap: 0.0}
+jig:
+  generator: jig.bending3p_rollers
+  part_ids: {indenter: 1001, support: 1002}
+  mids: {indenter: 1001, support: 1002}
+  id_ranges: {node: [5000000, 5999999], element: [5000000, 5999999]}
+  params: {span: span, indenter_radius: r_ind, support_radius: r_sup, roller_length: auto}
+  reference_nodes: [indenter_ref, support_top]
+material_slots:
+  - slot: body
+    regions: [specimen]
+    part_id: 1
+    mid: 101
+    secid: 101
+    lcid: 1101
+    section: {keyword: SECTION_SOLID, elform: -2}
+parameters:
+  - {name: span, type: R, dimension: length, unit_si: m, default: 0.064, range: [0.010, 0.300], matnexus_key: span}
+  - {name: r_ind, type: R, dimension: length, unit_si: m, default: 0.005, range: [0.001, 0.02], matnexus_key: null}
+  - {name: r_sup, type: R, dimension: length, unit_si: m, default: 0.005, range: [0.001, 0.02], matnexus_key: null}
+  - {name: overhang, type: R, dimension: length, unit_si: m, default: 0.008, range: [0.0, 0.05], matnexus_key: null}
+  - {name: fric, type: R, dimension: dimensionless, unit_si: "1", default: 0.1, range: [0.0, 0.6], matnexus_key: null}
+responses:
+  - response_key: force_disp
+    test_channel: force
+    axis: displacement
+    extractor:
+      y: {name: rcforc_resultant, contact_id: 1, side: master, component: z, sign: -1, scale: symmetry}
+      x: {name: nodout_disp, node: {ref: indenter_ref}, component: z, sign: -1}
+    alt_axes:
+      deflection:
+        x: {name: nodout_rel_disp, node: {ref: midspan_bottom}, ref_nodes: [{ref: support_top}], component: z, sign: -1}
+    weight: 1.0
+    window: {split: auto}
+compliance: {value_m_per_n: 1.8e-7, method: rigid_block, calibrated_at: "2026-10-01"}
+verification:
+  reference_card: verification/reference_card.yaml
+  reference_dimensions: {width: 0.010, thickness: 0.004, total_length: 0.080}
+  reference_params: {span: 0.064}
+  reference_window_m: 0.004
+  mesh_convergence: {size_factors: [2.0, 1.0], quantities: [initial_slope, force_at_end]}

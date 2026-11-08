@@ -1,0 +1,5 @@
+ Version : smp d R13.1.1
+ *** Warning 40513 (SOL+513)
+   initial penetration of node 12 = 1.2000E-03
+   initially penetrating node 14 penetration = 3.5000E-03
+ N o r m a l    t e r m i n a t i o n

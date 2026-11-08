@@ -1,0 +1,2 @@
+ Version : smp d R13.1.1
+ cycle 1000 t 0.4
