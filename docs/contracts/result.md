@@ -1,4 +1,4 @@
-schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
+schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
 
 # 결과 스키마 계약
 
@@ -67,7 +67,7 @@ schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
 | `fixed_params` | `{name: {value, source}}` | SI | 식별하지 않은 입력값(ν, ρ, `fixed_value`로 고정한 변수). `source`: `request.reference` \| `request.params` \| `config.default` |
 | `valid_range` | object \| null | 1 | 유효 범위 = 최적점 해석에서 이 슬롯 요소가 도달한 최대 유효소성변형률(추출기 `field_max`). 탄성 전용이면 null |
 | `extrapolation` | object \| null | — | §3.2 |
-| `hardening` | `{law, coefficients}` | SI | 계수 모드면 `law`(`swift`\|`voce`\|`swift_voce`)와 계수, 테이블 모드면 null |
+| `hardening` | `{law, coefficients}` | SI | 계수 모드면 `law`(`swift`\|`voce`\|`swift_voce`)와 계수, 테이블 모드면 null. (1.1) 계수는 강상관으로 비유일할 수 있어 참고값이며, **판정·불확도·MatNexus 반입은 `card_blocks.table` 기준** |
 | `derived.lsdyna_keyword` | string | — | 2차 산출물 카드 키워드(`MAT_001`\|`MAT_024`) |
 
 `ParamResult`: `{value, unit, stage, lower, upper, initial, at_bound}`. `at_bound` = 값이 경계에서 정규화 거리 `result.at_bound_tol`(0.01) 이내 → 경고 `PARAM_AT_BOUND`.
@@ -172,6 +172,7 @@ MatNexus `elastic` 블록은 온도별 행을 가질 수 있으나 이 SW는 온
 
 | 항목 | 규칙 |
 | --- | --- |
+| (1.1) 기준 | 탄소성 불확도·비교는 테이블 응력(εp 노드별) 기준. 계수 모드의 계수별 통계는 내지 않는다 |
 | `method` | `per_specimen_scaling`(기본) \| `per_specimen_refit`(설정 `uncertainty.per_specimen_refit=true`, run별 재식별 — 예산 `uncertainty.refit_max_evaluations` 별도) \| `none`(run 1개) |
 | `E_scaled` | 모드 A: E* · k₀,exp,r / k₀,sim* (run r 시험 기울기 / 최적 해석 기울기, 정렬 3단계 기울기 정의). 모드 B: null + `notes`에 `MODE_B_SCALING_NA` |
 | `statistics` | run이 2개 이상일 때 `E_scaled` 표본 평균·표준편차(n−1)·변동계수. 키는 전역 θ 이름 |
@@ -223,7 +224,7 @@ MatNexus `elastic` 블록은 온도별 행을 가질 수 있으나 이 SW는 온
 }
 ```
 
-`load_mode` enum(확장 가능): `three_point_bending`(1차), `four_point_bending`, `uniaxial_compression`(2차), `dynamic_bending`(n차).
+`load_mode` 값은 TestSpec 클래스 속성 `load_mode`(1.1, plugins.md §4.5)에서 온다. 시험마다 다르면 목록. enum(확장 가능): `three_point_bending`(1차), `four_point_bending`, `uniaxial_compression`(2차), `dynamic_bending`(n차).
 
 ### 4.8 `termination`
 
@@ -241,7 +242,7 @@ Verifier 기능을 결과 확정 단계에서 자동 실행: 슬롯별 `card_blo
 
 ### 4.10 `Warning`
 
-`{code, message, test_key?, slot?, run_id?, param?}`. 1차 경고 코드: `COMPLIANCE_MISSING`, `COMPLIANCE_INSTRUMENT_MISMATCH`, `COMPLIANCE_NONMONOTONIC`, `DENSITY_DEFAULTED`, `PARAM_AT_BOUND`, `IDENTIFIABILITY_LOW_DATA`, `HIGH_CORRELATION`, `INSENSITIVE_PARAM`, `ILL_CONDITIONED`, `DIAGNOSTICS_SKIPPED`, `TABLE_NODES_BEYOND_VALID_RANGE`, `ROUNDTRIP_FAILED`, `WALL_TIME_REACHED`, `FALLBACK_EXPLICIT_USED`, `KE_RATIO_HIGH`, `BEAM_THEORY_APPROXIMATE`, `MESH_COARSENED`, `SYMMETRY_IGNORED_STP`, `PARAM_OVERRIDES_SPECIMEN`, `RECIPE_WARNINGS`(레시피 검증 경고 승계), `EXPLICIT_CHECK_DEVIATION`, `EXPLICIT_CHECK_KE_HIGH`, `EXPLICIT_CHECK_FAILED`, `EXPLICIT_CHECK_SKIPPED`(§4.12), `RATE_DEPENDENCE_NOT_IDENTIFIED`, `REFERENCE_RATE_UNKNOWN`(§4.13). 새 코드는 MINOR에서 추가.
+`{code, message, test_key?, slot?, run_id?, param?}`. 1차 경고 코드: `COMPLIANCE_MISSING`, `COMPLIANCE_INSTRUMENT_MISMATCH`, `COMPLIANCE_NONMONOTONIC`, `DENSITY_DEFAULTED`, `PARAM_AT_BOUND`, `IDENTIFIABILITY_LOW_DATA`, `HIGH_CORRELATION`, `INSENSITIVE_PARAM`, `ILL_CONDITIONED`, `DIAGNOSTICS_SKIPPED`, `TABLE_NODES_BEYOND_VALID_RANGE`, `ROUNDTRIP_FAILED`, `WALL_TIME_REACHED`, `FALLBACK_EXPLICIT_USED`, `KE_RATIO_HIGH`, `BEAM_THEORY_APPROXIMATE`, `MESH_COARSENED`, `SYMMETRY_IGNORED_STP`, `PARAM_OVERRIDES_SPECIMEN`, `RECIPE_WARNINGS`(레시피 검증 경고 승계), `MESH_QUALITY_LOW`(1.1: 메시 품질 임계 미달, 경고 — plugins.md G12), `EXPLICIT_CHECK_DEVIATION`, `EXPLICIT_CHECK_KE_HIGH`, `EXPLICIT_CHECK_FAILED`, `EXPLICIT_CHECK_SKIPPED`(§4.12), `RATE_DEPENDENCE_NOT_IDENTIFIED`, `REFERENCE_RATE_UNKNOWN`(§4.13). 새 코드는 MINOR에서 추가.
 
 ### 4.11 `traceability`
 
@@ -293,7 +294,7 @@ Verifier 기능을 결과 확정 단계에서 자동 실행: 슬롯별 `card_blo
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `per_case[].status` | `ok` \| `deviation` \| `failed` \| `skipped` | `deviation` = 임계값 초과(경고 `EXPLICIT_CHECK_DEVIATION`) |
-| `vs_implicit`, `vs_experiment` | object | 구간별 정규화 오차 e_k(1), 피크 하중 상대차(1), 범위 부족 비율(1) |
+| `vs_implicit`, `vs_experiment` | object | 구간별 정규화 오차 e_k(1), 피크 하중 상대차(1), 범위 부족 비율(1). (1.1) `vs_experiment`는 케이스 내 run별 지표의 산술평균 |
 | `ke_ie_ratio_max` | number | GLSTAT 운동/내부 에너지 비 최대 |
 | `skip_reason` | string \| null | `skipped`일 때: `no_explicit_controls` \| `mass_scaling` \| `adapter_unsupported` |
 
@@ -323,7 +324,7 @@ Verifier 기능을 결과 확정 단계에서 자동 실행: 슬롯별 `card_blo
 
 ## 5. 2차 산출물
 
-LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifact `card_lsdyna`, 슬롯별). 키워드는 SolverAdapter의 재료 writer가 쓰며 *MAT_001(탄성 전용) 또는 *MAT_024 + *DEFINE_CURVE(LCSS)이고 단위계는 mm·N·s·tonne(덱 머리 주석에 명시). 타 솔버 카드는 MatNexus 렌더러가 `card_blocks`로 만든다.
+LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifact `card_lsdyna`, 슬롯별). (1.1) 최적점 실행 폴더의 카드를 복사하지 않고, 엔진이 결과 조립 시 **결과 NeutralMaterial**(테이블은 §3.2 유효 범위 절단·외삽 행 반영 후)을 `SolverAdapter.render_card(neutral, slot, options)`(plugins.md §4.2)로 다시 렌더링한다. 어댑터 `card_format`이 None이면 `card_lsdyna`를 내지 않는다. 키워드는 SolverAdapter의 재료 writer가 쓰며 *MAT_001(탄성 전용) 또는 *MAT_024 + *DEFINE_CURVE(LCSS)이고 단위계는 mm·N·s·tonne(덱 머리 주석에 명시). 타 솔버 카드는 MatNexus 렌더러가 `card_blocks`로 만든다.
 
 ## 6. artifact 목록 `ArtifactRef`
 
@@ -335,7 +336,7 @@ LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifac
 | `kind` (확장 가능 enum) | 형식 | 범위 | 내용 |
 | --- | --- | --- | --- |
 | `result_json` | application/json | 잡 | 이 결과 본문 사본 |
-| `card_lsdyna` | text/plain (.k) | 슬롯 | 2차 산출물 카드 |
+| `card_lsdyna` | text/plain (.k) | 슬롯 | 2차 산출물 카드 — (1.1) 결과 NeutralMaterial에서 `render_card`로 재렌더링(§5) |
 | `card_blocks_json` | application/json | 슬롯 | `card_blocks` 단독(MatNexus 반입용) |
 | `curve_compare` | text/csv | 케이스·run | 열: `x_m, f_exp_N, f_sim_N, residual_N, region`(격자 위) |
 | `curve_raw` | text/csv | 케이스 | 최적점 해석 원곡선 `x_m, f_N` |
@@ -413,3 +414,13 @@ LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifac
 | S-4 | 테이블은 기본적으로 유효 범위까지만 내고 외삽 행은 설정으로만 추가 | 가정 |
 | U-1 | ADR 0026은 제안 상태이고 테이블형 물성을 담을 자리가 없음 → 결과 반입 형식은 MatNexus 협의(decisions: MatNexus 무수정) | 미결 |
 | U-2 | ADR `classification`(기밀 여부)은 matobserver가 판단할 수 없어 출력하지 않음 | 미결 |
+
+## 변경 이력
+
+| 버전 | 날짜 | 변경(추가·기본값 조정만, 기존 필드 의미 불변) |
+| --- | --- | --- |
+| 1.0 → 1.1 | 2026-11-08 | `hardening` 계수 참고값·테이블 기준 판정(§2), 불확도 테이블 기준(§4.4) |
+| 1.0 → 1.1 | 2026-11-08 | `load_mode` 출처 = TestSpec 속성(§4.7) |
+| 1.0 → 1.1 | 2026-11-08 | `vs_experiment` run 평균(§4.12) |
+| 1.0 → 1.1 | 2026-11-08 | 경고 `MESH_QUALITY_LOW`(§4.10) |
+| 1.0 → 1.1 | 2026-11-08 | `card_lsdyna`를 결과 NeutralMaterial에서 `render_card`로 재렌더링(§5·§6) |

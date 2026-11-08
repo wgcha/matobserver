@@ -1,4 +1,4 @@
-schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
+schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
 
 # 플러그인 계약
 
@@ -183,6 +183,8 @@ class EvalOutcome:
     J: float                       # 페널티 포함 최종 값(유한)
     penalized: bool                # 해석 실패·시간 초과·범위 부족 페널티 여부
     components: Mapping[str, float] = field(default_factory=dict)
+    # 1.1 정식화: 잔차 벡터는 키 "residual:{i:07d}"(i=0부터, 7자리 0채움)로 싣는다. 키 사전순 = 벡터 순서.
+    # 그 밖의 키는 J 구성요소 등 자유. 잔차를 쓰지 않는 최적화기는 무시한다.
 
 @dataclass(frozen=True)
 class StopSignal:
@@ -207,7 +209,11 @@ class Optimizer(Protocol):
 
 - `space`의 이름은 전역(`slot.param`), 값은 SI 물리량. 정규화(log 포함)는 최적화기 내부 책임.
 - `ask` 결과는 경계 안, 제약 만족. `initial_points`(TestSpec 해석식 초기값)는 첫 `ask`들에서 그대로 먼저 나와야 한다.
-- 종료 판정의 주체는 엔진: 예산(`budget.max_evaluations`), 정체(`engine.stagnation.k`회 연속 상대 개선 < `engine.stagnation.rel_tol`), 시간, 취소. 최적화기는 `suggest_stop`으로 수렴만 알린다.
+- 종료 판정의 주체는 엔진: 예산(`budget.max_evaluations`), 정체, 시간, 취소. 최적화기는 `suggest_stop`으로 수렴만 알린다.
+- (1.1) 정체 판정: 단계 최적 J의 상대 개선이 최근 **k·(d+1) 평가**(k = `engine.stagnation.k`, d = 단계 변수 수) 동안 `engine.stagnation.rel_tol` 미만이면 종료. 차분 기반 최적화기의 한 반복이 d+1 평가이므로 「연속 k회」를 반복 단위로 본다.
+- (1.1) 단계별 예산: plastic 단계가 있으면 elastic 단계 평가 상한 = max(1, ceil(0.3·N)) (N = `budget.max_evaluations`), 남은 평가는 plastic 단계. 진단·왕복·explicit 검사는 예산 밖.
+- (1.1) 잔차 전달 규약: 엔진은 `tell`의 `EvalOutcome.components`에 잔차 벡터 r을 `"residual:{i:07d}"` 키로 싣는다. r = [testspec.md §9.3](testspec.md)의 √(scale·w_k)·(F_sim − F_exp)/‖F_exp‖_{Ω_k}을 시험·run·응답·구간 순으로 연결한 것(scale = 그 run·응답의 결합 가중, 해석 범위 밖 격자점은 F_sim = 0, w_k = 0 구간은 제외해 단계 안에서 길이 고정). `lsq`는 이 벡터가 있으면 Gauss–Newton/LM, 없으면 J 스칼라 모드. 접두사는 옵션 `residual_prefix`(기본 `"residual:"`)로만 바꿀 수 있다.
+- (1.1) 단계별 기본 최적화기: `engine.stages.elastic.optimizer`(=`lsq`), `engine.stages.plastic.optimizer`(=`lsq`). BO는 옵션(요청 `optimizer: "bo"`). 근거: G2에서 Swift 계수 강상관으로 BO 테이블 오차 3–11%, lsq 1% 이내. 1.0 키 `engine.elastic_stage.optimizer`·`engine.plastic_stage.optimizer`는 호환 별칭으로 읽되 새 키가 우선.
 - `bo` 기본 옵션 키: `n_initial`(기본 `max(4, 2·d)`), `acquisition`(`ei`), `kernel`(`matern52`), `xi`(0.01). `lsq` 옵션: `fd_step_rel`(0.01), `max_iter`, `ftol`.
 
 ### 4.2 SolverAdapter
@@ -292,6 +298,7 @@ class SolverCapabilities:
     extension_keys: frozenset[str]       # 해석 가능한 NeutralMaterial.extensions 키
     unit_system: str                     # 파일 단위계 "mm-N-s-tonne"
     supports_overrides: bool             # RunOverrides(요소 정식화·hourglass·질량 스케일링 금지) 지원 — explicit 재현 검사 필요조건
+    card_format: str | None = None       # (1.1) render_card 출력 형식. lsdyna: "lsdyna_k", surrogate_beam: None(카드 산출물 없음)
 
 @dataclass(frozen=True)
 class RunOverrides:                      # explicit 재현 검사용 실행 덮어쓰기 (testspec.md §8.1)
@@ -317,6 +324,11 @@ class SolverAdapter(Protocol):
     def single_element_uniaxial(self, material: NeutralMaterial, strain_max: float,
                                 workdir: Path, timeout_s: float) -> CurveData: ...
         # 1요소 단축 덱 실행 → x=유효소성변형률[1], y=진응력[Pa] (왕복 검사용, module-boundaries.md §4.6)
+    def render_card(self, neutral: NeutralMaterial, slot: SlotBinding,
+                    options: Mapping[str, Any]) -> str: ...
+        # (1.1) 결과 카드 렌더링. 입력은 결과 NeutralMaterial(유효 범위 절단·외삽 행 반영 후, result.md §3.2).
+        # 덱 조립과 같은 재료 writer(deck/materials) 재사용. mm·N·s·tonne, 머리 주석에 단위·슬롯·출처.
+        # options: {"title": str, "header_comments": list[str]}. card_format=None이면 NotImplementedError.
 ```
 
 `cleanup` keep 단계와 설정 `solver.keep_d3plot` 매핑:
@@ -367,6 +379,8 @@ class MaterialModel(Protocol):
     def describe(self, theta_local: Mapping[str, float]) -> Mapping[str, Any]: ...  # 결과 메타(경화식·외삽)
 ```
 
+(1.1) 엔진 호출 순서: `__init__(options)` → `bind(reference)` → `initial_guess(hints)` → `param_space()` → `to_neutral(θ)`… `param_space()`의 기본 범위·initial은 `bind`·`initial_guess`에서 받은 값으로 정해지므로 이 순서를 지킨다.
+
 `hints` 키(TestSpec이 채움, SI): `E0`(해석식 E), `sigma_y0`(항복 추정), `eps_p_max0`(최대 소성변형률 추정). 없는 키는 무시. 힌트가 없으면(STP 형상) 기본 범위는 설정 `material.default_E_range_pa`([1e6, 1e12], log)와 `material.default_sigma_y_range_pa`([1e5, 5e9], log)를 쓰고, initial은 기준 카드(`reference`) 값, 그것도 없으면 log 중앙값.
 
 1차 구현 파라미터 이름(요청 `params`와 결과 `identified_params`에서 그대로 쓴다):
@@ -386,11 +400,13 @@ class MaterialModel(Protocol):
 | 모델 | 옵션 | 기본 | 설명 |
 | --- | --- | --- | --- |
 | `mat024_coeff` | `hardening_law` | `material.mat024_coeff.default_law`(=`swift`) | `swift`\|`voce`\|`swift_voce` |
+| | (1.1 주의) | — | 경화식 개별 계수(K·ε0·n 등)는 강상관으로 **비유일할 수 있다**. 결과 판정·불확도·외삽 판단은 계수가 아니라 샘플링된 테이블(`card_blocks.table`) 기준([result.md §2](result.md)) |
 | | `table_points` | `result.table_points`(=50) | to_neutral 테이블 샘플 수 |
 | | `max_strain` | `material.mat024.max_strain`(=0.2) | 샘플링 상한(유효 범위와 별개, 결과에서 잘림 [result.md §3.2](result.md)) |
 | `mat024_table` | `table_nodes` | `material.mat024_table.nodes`(=8) | m+1개 노드(εp=0 포함) |
 | | `node_spacing` | `geometric` | `geometric`\|`linear`\|`explicit` |
 | | `strain_nodes` | — | `explicit`일 때 εp 리스트(0으로 시작, 엄격 증가) |
+| | `first_node_strain` | `material.mat024_table.first_node_strain`(=0.002) | (1.1) `geometric` 배치의 첫 비영(非零) 노드 εp. 이후 노드는 `max_strain`까지 등비 |
 | | `max_strain` | 0.2 | 마지막 노드 εp |
 
 ### 4.4 GeometryMesher
@@ -447,7 +463,7 @@ class MeshResult:
     symmetry: str
     quality: MeshQuality
     target_size_used_m: float
-    warnings: tuple[Issue, ...]
+    warnings: tuple[Issue, ...]          # (1.1) 품질 임계 미달은 MESH_QUALITY_LOW(경고)로 여기에
 
 @dataclass(frozen=True)
 class JigSpec:
@@ -514,6 +530,7 @@ class TestSpec(Protocol):
     name: ClassVar[str]                              # "bending"
     version: ClassVar[str]
     matnexus_test_type_keys: ClassVar[tuple[str, ...]]   # ("flexural",)
+    load_mode: ClassVar[str]                             # (1.1) result.md §4.7 equivalence.load_mode (bending: "three_point_bending")
     def __init__(self, options: Mapping[str, Any]) -> None: ...
     def allowed_geometries(self) -> tuple[str, ...]: ...
     def required_channels(self) -> tuple[tuple[str, ...], ...]: ...   # AND of OR-groups
@@ -565,6 +582,7 @@ class RateInfo:
 | O6 | 2D 이차 함수(최소점 경계 내부)에서 수렴 | `bo`: 40평가 내 J < 1e-3 / `lsq`: 20평가 내 |
 | O7 | log 스케일 변수 경계 [1e6, 1e12]에서 정규화 동작 | 수렴(O6 기준) |
 | O8 | `max_batch` 초과 n 요청 시 `ValueError` | 발생 |
+| O9 | (1.1) `components`의 `residual:` 키가 있으면 사용, 없으면 스칼라 모드로 동작(`lsq`), 다른 최적화기는 무시해도 예외 없음 | 통과 |
 
 ### 5.2 SolverAdapter
 
@@ -582,6 +600,7 @@ class RateInfo:
 | S10 | `cleanup`이 작업 폴더 밖 삭제 없음, keep 단계별 남는 파일이 매핑표와 일치 | 0건, 일치 |
 | S11 | `single_element_uniaxial`: MAT_024 테이블 입력 → 출력 응력이 입력 테이블 재현 | 최대 상대오차 ≤ `verify.roundtrip_tol` |
 | S12 | `supports_overrides=True`면 `RunOverrides` 반영(*SECTION elform·*HOURGLASS·HGID가 덱에 기록), 질량 스케일링 제어 파일 + `forbid_mass_scaling` → `IncompatibleOverride`, explicit 고정·fallback 없음 | 통과 |
+| S13 | (1.1) `render_card`: 결과 NeutralMaterial → 카드 → `.k` 리더 재파싱 시 E·ν·ρ·테이블 상대오차 ≤1e-6, 테이블 마지막 행 = 입력 마지막 행(절단·외삽 반영값). `card_format=None`이면 `NotImplementedError` | 통과 |
 
 ### 5.3 MaterialModel
 
@@ -595,6 +614,7 @@ class RateInfo:
 | M6 | `produces_table=False`면 table None | 통과 |
 | M7 | `mat024_coeff`: Swift/Voce 해석식 값과 테이블 점 일치 | 상대오차 ≤1e-9 |
 | M8 | `mat024_table`: 임의 θ에서 단조성(변수 정의로 보장) | 위반 0 |
+| M9 | (1.1) 호출 순서 `bind → initial_guess → param_space`에서 initial이 경계 안, 순서를 지키면 결정적 | 통과 |
 
 ### 5.4 GeometryMesher
 
@@ -611,6 +631,7 @@ class RateInfo:
 | G9 | 잘못된 spec → `validate`가 Issue 반환(예외 없음) | 통과 |
 | G10 | `max_elements` 초과 입력 → 조대화 후 상한 이하 + 경고 `MESH_COARSENED` | 통과 |
 | G11 | `layered_box`: 레이어별 체적 합 = 전체, 계면 노드 공유(연속 메시) | 통과 |
+| G12 | (1.1) 품질 임계(`mesh.min_scaled_jacobian`·`mesh.max_aspect_ratio`) 미달이지만 유효한(뒤집힘 없는) 메시 → 실패가 아니라 `MeshResult.warnings`에 `MESH_QUALITY_LOW`. scaled Jacobian ≤ 0(뒤집힘)은 `mesh` 실패(엔진 `MESH_FAILED`) | 통과 |
 
 ### 5.5 TestSpec
 
@@ -624,6 +645,7 @@ class RateInfo:
 | T6 | `map_run`이 컴플라이언스를 적용하지 않음(x = 원 채널, `compliance_m_per_n` 전달) — 이중 적용 방지 | x 비트 동일 |
 | T8 | `param_space()`가 ParamSpace를 돌려주고(bending은 빈 공간) `param_targets()` 키와 일치 | 통과 |
 | T9 | `reference_strain_rate`: bending 합성 입력(h, V, L)에서 6hV/L² 일치, test_speed 없고 time 채널 있으면 시간 채널 추정, 둘 다 없으면 `value_1_s=None` | 상대오차 ≤1e-12 / 규칙 일치 |
+| T10 | (1.1) 클래스 속성 `load_mode`가 result.md §4.7 enum 값 | 통과 |
 | T7 | 결정성 | 동일 |
 
 ## 6. 가정·미결
@@ -641,3 +663,15 @@ class RateInfo:
 | P-9 | 탄성 단계는 identify 슬롯을 탄성 전용 카드로 해석 | 가정 |
 | P-10 | explicit 재현 검사는 `prepare(..., overrides=RunOverrides)` 한 경로로 처리(새 모드 없음). 질량 스케일링이 있는 레시피는 덱을 고치지 않고 검사 불가로 처리 | 가정 |
 | U-1 | 탄소성 기본 모드(coeff/table)와 기본 경화식 — 사용자 결정 대기. 현재 기본값(`engine.default_plasticity_mode`, `material.mat024_coeff.default_law`=`swift`) 유지 | 미결 |
+
+## 변경 이력
+
+| 버전 | 날짜 | 변경(추가·기본값 조정만, 기존 필드 의미 불변) |
+| --- | --- | --- |
+| 1.0 → 1.1 | 2026-11-08 | `EvalOutcome.components` 잔차 키 `residual:{i:07d}` 정식화, 잔차 전달 규약(§4.1) |
+| 1.0 → 1.1 | 2026-11-08 | 정체 판정 k·(d+1), elastic 예산 상한 ceil(0.3·N), 단계별 기본 최적화기 lsq·BO 옵션(§4.1) |
+| 1.0 → 1.1 | 2026-11-08 | `SolverCapabilities.card_format`, `SolverAdapter.render_card`(§4.2), 계약 S13 |
+| 1.0 → 1.1 | 2026-11-08 | MaterialModel 호출 순서 bind→initial_guess→param_space(§4.3), M9 |
+| 1.0 → 1.1 | 2026-11-08 | `mat024_table.first_node_strain`(0.002), 계수 비유일 주의(§4.3) |
+| 1.0 → 1.1 | 2026-11-08 | `MESH_QUALITY_LOW` 경고(§4.4), G12 |
+| 1.0 → 1.1 | 2026-11-08 | TestSpec `load_mode` 클래스 속성(§4.5), T10, 계약 O9 |

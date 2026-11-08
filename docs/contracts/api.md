@@ -1,4 +1,4 @@
-schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
+schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
 
 # API 계약 (REST)
 
@@ -16,7 +16,7 @@ matobserver의 외부 계약. 소비자는 MatNexus(서비스 토큰)와 관리�
 | 시각 | ISO 8601 UTC(`2026-11-08T03:12:00Z`) |
 | 필드 이름 | snake_case. 응답에 모르는 필드가 있으면 클라이언트는 무시해야 한다 |
 | 요청 필드 | 엄격: 정의되지 않은 필드는 400 `SCHEMA_INVALID` |
-| `schema_version` | 요청 본문(JSON)에 필수, 모든 응답 본문에 포함. 형식 `"MAJOR.MINOR"` (현재 `"1.0"`) |
+| `schema_version` | 요청 본문(JSON)에 필수, 모든 응답 본문에 포함. 형식 `"MAJOR.MINOR"` (현재 `"1.1"`; `"1.0"` 요청도 수용) |
 | 페이지 | 목록은 `limit`(기본 `api.page_default_limit`=50, 최대 `api.page_max_limit`=500), `offset`(0부터). 응답 `{items, total, limit, offset}` (MatNexus `Page` 형과 같은 모양) |
 | 경로 비노출 | 어떤 응답에도 서버 파일 경로를 넣지 않는다. 파일은 `file_id`(입력)·`artifact_id`(출력)로만 다룬다 |
 
@@ -105,8 +105,8 @@ multipart 필드:
 | `test_type`, `recipe`, `geometry`, `test_run_ids`, `inline_runs`, `displacement_channel`, `recipe_params` | — | * | — | **단일 시험 약식**: `tests`를 생략하고 최상위에 `TestInput` 필드를 두면 `tests=[{test_key:"t1", ...}]`와 같다. `tests`와 동시 사용 시 400 `SCHEMA_INVALID` |
 | `materials` | `MaterialsInput` | 예 | — | 재료 슬롯(§4.3) |
 | `plasticity_mode` | `"coeff"` \| `"table"` | 아니오 | — | 슬롯 `material_model`이 별칭 `mat024`일 때의 해석 기본값. 생략 시 설정 `engine.default_plasticity_mode` |
-| `optimizer` | string \| `{name, options}` | 아니오 | — | 탄소성 단계 최적화기 레지스트리 이름. 기본 `engine.plastic_stage.optimizer`(=`bo`) |
-| `elastic_optimizer` | string \| `{name, options}` | 아니오 | — | 탄성 단계 최적화기. 기본 `engine.elastic_stage.optimizer`(=`lsq`) |
+| `optimizer` | string \| `{name, options}` | 아니오 | — | 탄소성 단계 최적화기 레지스트리 이름. 기본 `engine.stages.plastic.optimizer`(=`lsq`, 1.1; BO는 `"bo"`로 지정하는 옵션) |
+| `elastic_optimizer` | string \| `{name, options}` | 아니오 | — | 탄성 단계 최적화기. 기본 `engine.stages.elastic.optimizer`(=`lsq`) |
 | `solver` | string \| `{name, options}` | 아니오 | — | 솔버 어댑터 이름. 기본 `engine.default_solver`(=`lsdyna`) |
 | `friction` | `FrictionInput` | 아니오 | — | 지그–시편 마찰. 생략 시 레시피 파라미터 `fric` 기본값 |
 | `budget` | `BudgetInput` | 아니오 | — | 해석 예산 |
@@ -305,6 +305,8 @@ multipart 필드:
 
 본문 없음. `queued`면 즉시 `cancelled`. `running`이면 `cancel_requested=true`로 202를 돌려주고, 워커가 `worker.cancel_poll_s`(기본 5) 안에 실행 중 해석을 종료한 뒤 `cancelled`로 바꾼다. 종결 상태면 409 `JOB_ALREADY_FINISHED`.
 
+Backend 취소 처리 규칙(1.1): 엔진은 `CancelToken`을 확인하면 예외 `CalibrationCancelled`([module-boundaries.md §4.1](module-boundaries.md))로 빠져나온다. 워커는 ① `CalibrationCancelled`, ② 취소 요청 뒤 발생한 다른 예외, ③ 엔진이 정상 반환했지만 반환 시점에 `cancel_requested=true`인 경우 모두 상태를 `cancelled`로 바꾸고 `error`는 null로 둔다(실패로 기록하지 않음). 결과 본문은 저장하지 않으므로 E6은 409 `JOB_NOT_SUCCEEDED`. 이미 기록된 history(E7)는 그대로 조회된다. 취소 전까지 등록된 artifact와 작업 폴더는 삭제하지 않고 보존 규칙(`artifacts.retention_days`)만 따른다(결과 목록에 실리지 않으므로 외부 노출 경로 없음). 실행 중 해석의 d3plot 등은 keep 매핑표(plugins.md §4.2)의 비최적 평가 규칙으로 정리한다.
+
 ## 5. 잡 상태 머신
 
 ```
@@ -492,3 +494,10 @@ verifying ──(검증 PASS)──→ active ──(retire)──→ retired
 | A-7 | `rejected` 레시피 버전 번호는 재사용 허용 | 가정 |
 | U-1 | 결과 반입 경로(ADR 0026 구현 vs parameter-set 직접 입력)는 MatNexus 협의 대기. 이 계약은 결과를 조회 API로만 제공 | 미결 |
 | U-2 | 잡 삭제·artifact 정리 API 필요 여부 | 미결 |
+
+## 변경 이력
+
+| 버전 | 날짜 | 변경(추가·기본값 조정만, 기존 필드 의미 불변) |
+| --- | --- | --- |
+| 1.0 → 1.1 | 2026-11-08 | `optimizer` 기본을 `engine.stages.plastic.optimizer`(=lsq)로, `elastic_optimizer` 기본 키를 `engine.stages.elastic.optimizer`로(§4.2) |
+| 1.0 → 1.1 | 2026-11-08 | 취소 처리 규칙과 `CalibrationCancelled` 연계(§4.12) |

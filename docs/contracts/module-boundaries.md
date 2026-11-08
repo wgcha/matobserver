@@ -1,4 +1,4 @@
-schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
+schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
 
 # 모듈 경계·구현 소유 계약
 
@@ -122,6 +122,8 @@ class CalibrationSpec:                 # 검증·정규화 완료된 요청 (api
     budget: Mapping[str, float]
     seed: int
     request_hash: str
+    plasticity_mode: str | None = None          # (1.1) 요청 plasticity_mode(해석값). None이면 아래 우선순위
+    explicit_check: Mapping[str, Any] | None = None  # (1.1) 요청 explicit_check(해석값, api.md §4.6.1)
 
 @dataclass(frozen=True)
 class ResolvedRecipe:
@@ -141,12 +143,17 @@ class EngineServices(Protocol):
     def record_eval(self, item: Mapping[str, Any]) -> None: ...  # api.md HistoryItem 형
     def progress(self, stage: str, **fields: Any) -> None: ...   # JobStatus.progress 갱신
     cancel: CancelToken
+    job_options: Mapping[str, Any]     # (1.1) Backend 통로: {"plasticity_mode", "explicit_check"} (1.0 구현 호환)
 
 def run_calibration(spec: CalibrationSpec, services: EngineServices) -> Mapping[str, Any]: ...
     # 반환: result.md §1 본문(artifacts 포함). 예외 EngineFailure(code)는 api.md §7.3 코드
 ```
 
 잡 생성 시 검증(api.md §4.7 ⑤⑥⑩)에 필요한 엔진 기능은 순수 함수로 노출: `engine.preflight(spec_draft, services) -> list[Issue]`(곡선 정렬 1–5단계 시험측, 식별성 사전 점검). Backend의 `validation/`이 호출한다.
+
+(1.1) 엔진의 잡 옵션 읽기 우선순위: **`CalibrationSpec` 필드 → `services.job_options[key]` → 설정**(`engine.default_plasticity_mode`, `verify.explicit_check.*`). 값이 None이면 다음 단계로 넘어간다. 현재 Backend는 `job_options`로 넘기고 엔진은 세 곳을 모두 읽는다. Backend는 1.1부터 spec 필드도 채운다(둘이 다르면 spec 우선).
+
+(1.1) 취소: 엔진은 `CancelToken.is_set()`을 평가 사이·해석 폴링 중에 확인하고 `CalibrationCancelled`(`matobserver.engine`에서 export, `core.errors.MatObserverError` 하위)를 던진다. `EngineFailure`가 아니므로 실행 오류 코드(api.md §7.3)가 없다. Backend 처리 규칙은 [api.md §4.12](api.md)(상태 `cancelled`, 결과 미저장, history·등록 artifact 보존).
 
 ### 4.2 Backend → 레시피 검증 (Impl-Backend ↔ Impl-Solver)
 
@@ -200,7 +207,7 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 
 | # | 테스트 | 기준 |
 | --- | --- | --- |
-| M-1 | 계약 테스트 G1–G11 (`box`, `layered_box`, `stp`, `jig.bending3p_rollers`) | 전부 통과 |
+| M-1 | 계약 테스트 G1–G12 (`box`, `layered_box`, `stp`, `jig.bending3p_rollers`) | 전부 통과 |
 | M-2 | box quarter/half/none 체적·노드 세트 | G1·G7 |
 | M-3 | layered_box 2·3층, `stack_axis` z·y | G11, 레이어 PID |
 | M-4 | STP 픽스처 3종(단일 바디 육면체, 필렛 있는 블록, 2바디) tet10/tet4 | 체적 오차 ≤1%, 품질, 바디→PID |
@@ -208,12 +215,13 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | M-6 | `max_elements` 초과 조대화 | G10 |
 | M-7 | 지그 롤러: span·R 변화 시 위치·초기 간격 0, `indenter_ref`·`support_top` 존재, *MAT_RIGID E·ν·ρ가 `mesh.jig.*`(또는 매니페스트 `jig.rigid`) 값 | 해석적 위치와 ≤1e-9 m |
 | M-8 | §2 규격 준수 — Impl-Solver `.k` 리더로 재파싱(리더 미완성 시 자체 고정 폭 파서 + 샘플 공유) | 성공 |
+| M-9 | (1.1) 계약 G12: 품질 임계 미달 → `MESH_QUALITY_LOW` 경고, 뒤집힘 → 실패 | 통과 |
 
 ### 5.2 Impl-Solver
 
 | # | 테스트 | 기준 |
 | --- | --- | --- |
-| S-1 | 계약 테스트 S1–S10 (`lsdyna`: 실행 없는 단위는 가짜 배치 스크립트로, 실행 필요 항목은 `@pytest.mark.lsdyna`) | 전부 통과 |
+| S-1 | 계약 테스트 S1–S13 (`lsdyna`: 실행 없는 단위는 가짜 배치 스크립트로, 실행 필요 항목은 `@pytest.mark.lsdyna`) | 전부 통과 |
 | S-2 | 덱 조립: 픽스처 레시피(parametric·fixed 각 1)에서 예약 include 6종 생성, *PARAMETER 값 환산 | 기대 텍스트와 일치 |
 | S-3 | 재료 writer 왕복: MatNexus `dp600-1elem-lsdyna.k` 사본의 *MAT_024 값 재현 | 상대오차 ≤1e-6 |
 | S-4 | 종료 판정: Normal/Error termination, 라이선스 오류 로그 픽스처 | 상태 정확 |
@@ -224,12 +232,13 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | S-9 | `single_element_uniaxial`(계약 S11) 및 `check_reference_curve`(§4.6) | 입력 테이블 ≤1% 재현, 기대 곡선 판정 일치 |
 | S-10 | implicit 제어 `&mo_dtmax` 반영, keep 매핑표대로 정리 | 생성 덱·남은 파일 일치 |
 | S-11 | 계약 S12(`RunOverrides`): ELFORM 1 + IHQ 6 덱 생성, 질량 스케일링 제어 → `IncompatibleOverride`, 샘플 굽힘 덱 explicit 실행 KE/IE 기록 | 통과 |
+| S-12 | (1.1) 계약 S13 `render_card`(lsdyna): 절단·외삽 반영 NeutralMaterial → 카드 재파싱 일치, MatNexus dp600 1요소 덱 *MAT_024와 필드 배치 일치 | 통과 |
 
 ### 5.3 Impl-Optim
 
 | # | 테스트 | 기준 |
 | --- | --- | --- |
-| O-1 | 계약 테스트 O1–O8, M1–M8, T1–T7, `surrogate_beam`의 S1–S5·S9·S11(`single_element_uniaxial`, 해석적) | 통과 |
+| O-1 | 계약 테스트 O1–O9, M1–M9, T1–T10, `surrogate_beam`의 S1–S5·S9·S11(`single_element_uniaxial`, 해석적) | 통과 |
 | O-2 | 정렬 8단계 단위 테스트: 각 단계 수치 규칙(토우·파손 절단·격자 점 수·출력 간격·범위 부족) | testspec.md §5 값과 일치 |
 | O-3 | 컴플라이언스 보정식(엔진 정렬 1단계 c에서만 1회 적용, map_run 경로와 합쳐도 1회) | 합성 곡선 δ_xhead = δ_spec + C·F 에서 복원한 δ의 최대 절대오차 ≤ 1e-12 × (δ_spec 범위). 이중 적용 시 오차가 C·F 크기로 나타나 실패 |
 | O-4 | **G2 가상 역식별(모드 A 탄성)**: `surrogate_beam`으로 만든 곡선(노이즈 0.5%)에서 E 복원 | 상대오차 ≤1% |
@@ -244,6 +253,10 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | O-13 | `engine.roundtrip.check`, `align_pair`/`curve_error` 공개 함수(§4.6) | 시그니처·반환 형식 일치 |
 | O-14 | explicit 재현 검사(가짜 어댑터): 단계 순서(왕복 이후), 지표 계산, 임계값 초과 시 경고만·잡 성공, 실패·건너뜀 코드 | 일치 |
 | O-15 | 기준 변형률속도 집계(T9 값 → result.md §4.13), `RATE_DEPENDENCE_NOT_IDENTIFIED` 항상 기록 | 일치 |
+| O-16 | (1.1) 탄소성 기본 `lsq`(설정 `engine.stages.plastic.optimizer`), 1.0 별칭 키 호환 | 통과 |
+| O-17 | (1.1) 결과 조립 시 `card_lsdyna`를 `render_card`로 생성(최적점 카드 복사 금지), `card_format=None`이면 생략 | 통과 |
+| O-18 | (1.1) elastic 예산 상한 ceil(0.3·N), 정체 k·(d+1), MaterialModel 호출 순서, `load_mode` 수집, explicit 검사 run 평균 | 일치 |
+| O-19 | (1.1) 옵션 우선순위 spec → job_options → config, `CalibrationCancelled` 발생 | 일치 |
 
 ### 5.4 Impl-Backend
 
@@ -260,6 +273,8 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | B-9 | artifact: 경로 비노출, 루트 밖 접근 차단, ETag, 410 | 통과 |
 | B-10 | 레지스트리 로더: 중복·클래스 불일치 → 기동 실패 | 통과 |
 | B-11 | 엔진 대역(가짜 `run_calibration`)으로 E3→E5→E6 종단 흐름 | 통과 |
+| B-12 | (1.1) `CalibrationSpec.plasticity_mode`·`explicit_check` 채움(job_options와 동일값), 취소 3경로(api.md §4.12) → `cancelled`·error null·결과 미저장 | 통과 |
+| B-13 | (1.1) 설정 기본값 갱신: `alignment.elastic_dev_tol`=0.015, `material.mat024_table.first_node_strain`=0.002, `engine.stages.{elastic,plastic}.optimizer`=lsq(1.0 키 별칭) | 통과 |
 
 ## 6. 설정 파일
 
@@ -284,14 +299,14 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | `solver.lsdyna` | `batch_command`(인자 템플릿 리스트, 예 `["{script}", "-i", "{main}", "-n", "{ncpu}"]`), `script`, `mode`(smp\|mpp), `ncpu`(기본 4), `precision`, `termination_patterns`, `license_error_patterns`, `version_pattern` | plugins.md §4.2 |
 | `mesh` | `max_elements`, `min_scaled_jacobian`, `max_aspect_ratio`, `volume_rel_tol_parametric`, `volume_rel_tol_stp`, `gmsh_threads`(1), `jig.rigid_E_pa`(2.1e11), `jig.rigid_poisson`(0.3), `jig.rigid_density_kg_m3`(7850) | plugins.md §5.4, 이 문서 §2 |
 | `geometry` | `layer_sum_rel_tol` | api.md §4.4 |
-| `engine` | `default_solver`, `default_plasticity_mode`, `default_seed`, `elastic_stage.optimizer`, `plastic_stage.optimizer`, `stagnation.{k,rel_tol}`, `abort_if_initial_all_failed` | plugins.md §4.1 |
+| `engine` | `default_solver`, `default_plasticity_mode`, `default_seed`, `stages.elastic.optimizer`(lsq), `stages.plastic.optimizer`(lsq, 1.1), (1.0 별칭) `elastic_stage.optimizer`·`plastic_stage.optimizer`, `stagnation.{k,rel_tol}`, `abort_if_initial_all_failed` | plugins.md §4.1 |
 | `budget` | `default_max_evaluations`, `max_evaluations_limit`, `default_max_wall_time_s` | api.md §4.6 |
 | `alignment` | testspec.md §5 표의 키 전부 | testspec.md §5 |
 | `objective` | `region_weights`, `shortfall_penalty`, `failed_run_J`, `scalar_floor`, (n차 예약) `similarity` | testspec.md §8 |
 | `cases` | `dimension_merge_rel_tol` | testspec.md §9.1 |
 | `identifiability` | `precheck_mode`, `min_points_per_param`, `post_fit`, `fd_step_rel`, `max_extra_evals`, `corr_threshold`, `min_sensitivity`, `max_condition` | testspec.md §9 |
 | `testspec.bending` | `prefer_deflection`(기본 false — 크로스헤드 기본, 결정 2026-11-08), `min_span_ratio`, `beam_theory_span_ratio`, `overtravel_ratio`, `min_eps_p0`, `rate_from_time_channel`(true) | testspec.md §10 |
-| `material` | `default_density_kg_m3`, `default_E_range_pa`, `default_sigma_y_range_pa`, `mat024.max_strain`, `mat024_coeff.default_law`, `mat024_table.nodes` | plugins.md §4.3, api.md §4.3 |
+| `material` | `default_density_kg_m3`, `default_E_range_pa`, `default_sigma_y_range_pa`, `mat024.max_strain`, `mat024_coeff.default_law`, `mat024_table.nodes`, `mat024_table.first_node_strain`(0.002, 1.1) | plugins.md §4.3, api.md §4.3 |
 | `result` | `table_points`, `table_spacing`, `table_first_step`, `extrapolate_to_strain`, `extrapolation_method`, `at_bound_tol` | result.md §2–3 |
 | `uncertainty` | `per_specimen_refit`, `refit_max_evaluations` | result.md §4.4 |
 | `verify` | `roundtrip_enabled`, `roundtrip_tol`, `roundtrip_strain`; `explicit_check.enabled`(false), `explicit_check.elform`(1), `explicit_check.hourglass.ihq`(6), `explicit_check.hourglass.qm`(0.1), `explicit_check.loading_velocity_m_s`(0.5), `explicit_check.max_ke_ratio`(0.05), `explicit_check.max_region_error`(0.05), `explicit_check.max_peak_rel_diff`(0.05), `explicit_check.run_timeout_s`(null) | result.md §4.9·§4.12, testspec.md §8.1 |
@@ -354,3 +369,11 @@ decisions.md·plan.md 확정 사항이 어느 계약에 반영됐는지.
 | B-7 | `verify/`는 `engine.alignment`·`engine.objective` 순수 함수만 import(역방향 금지) | 가정 |
 | U-2 | 해석 예산·성공 기준 임계값 — 사용자 결정 대기. §6 현재 자리표시값 유지 | 미결 |
 | U-3 | 식별성 사전 점검 실패 시 거절/경고, 탄소성 기본 모드·경화식 — 사용자 결정 대기, 현재 기본값 유지(testspec.md T-5, plugins.md U-1) | 미결 |
+
+## 변경 이력
+
+| 버전 | 날짜 | 변경(추가·기본값 조정만, 기존 필드 의미 불변) |
+| --- | --- | --- |
+| 1.0 → 1.1 | 2026-11-08 | `CalibrationSpec.plasticity_mode`·`explicit_check`, `EngineServices.job_options`, 옵션 읽기 우선순위, `CalibrationCancelled`(§4.1) |
+| 1.0 → 1.1 | 2026-11-08 | 설정 키 `engine.stages.*.optimizer`, `material.mat024_table.first_node_strain`(§6) |
+| 1.0 → 1.1 | 2026-11-08 | 완료 테스트 M-9, S-12, O-16–O-19, B-12–B-13, 계약 테스트 범위 갱신(§5) |

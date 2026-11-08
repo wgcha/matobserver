@@ -1,4 +1,4 @@
-schema_version: 1.0 · 상태: 승인(G1) · 2026-11-08
+schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
 
 # TestSpec·응답 정의·정렬 규칙 계약
 
@@ -111,7 +111,7 @@ SolverAdapter `capabilities().extractors`가 지원 이름을 선언한다. 출�
 
 - `window.split = none` 또는 잡에 plastic 단계 변수가 하나도 없으면(예: 전 슬롯 `mat001`): Ω1 = X 전체, Ω2 = ∅.
 - `auto`: 3단계 k₀(토우 보정 없으면 같은 맞춤 구간으로 계산)를 써서 x_e = { x > x(`toe_fit_hi`·F_peak) 이고 y(x) < (1 − `elastic_dev_tol`)·k₀·x 인 최소 x }. 없으면 x_e = X_u(전 구간 탄성). x_e는 [X_l, X_u]로 자른다.
-- 설정 키: `alignment.elastic_dev_tol`(0.05), `alignment.elastic_min_raw_points`(5).
+- 설정 키: `alignment.elastic_dev_tol`(**0.015**, 1.1; 1.0은 0.05 — G2에서 초기 소성 혼입으로 E −1.3% 편향), `alignment.elastic_min_raw_points`(5).
 
 ## 6. 변위 채널 선택 (굽힘)
 
@@ -174,7 +174,7 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | 요소 정식화 | `RunOverrides.section_by_slot`: elform·hourglass를 낙하 모델과 같게(예: 저감적분 hex ELFORM 1 + IHQ 6). 시편 메시는 케이스의 기존 메시 재사용(topology와 elform이 맞지 않으면 사전 400) | `verify.explicit_check.elform`(1), `verify.explicit_check.hourglass.ihq`(6), `verify.explicit_check.hourglass.qm`(0.1) |
 | 해석 | explicit 고정, fallback 없음, **질량 스케일링 금지**(`forbid_mass_scaling=True`). 하중 경로: mo_dend 같음, mo_tend = mo_dend / v_chk, mo_dtout = 정렬 7단계를 같은 격자로 다시 계산 | `verify.explicit_check.loading_velocity_m_s`(0.5), `verify.explicit_check.run_timeout_s`(null → `solver.run_timeout_s`) |
 | 준정적 확인 | `glstat_ratio`(KE/IE) 최대 > 상한이면 경고 `EXPLICIT_CHECK_KE_HIGH`(지표는 그대로 기록) | `verify.explicit_check.max_ke_ratio`(0.05) |
-| 지표 | 같은 격자·정렬 규칙(§5)으로 두 비교를 낸다: `vs_implicit`(기준 = implicit 최적점 해석 곡선), `vs_experiment`(기준 = 시험 곡선). 각각 구간별 e_k(§8 식, 기준 곡선을 F_exp 자리에) + 피크 하중 상대차 ΔF_peak = (F_peak,exp − F_peak,ref)/F_peak,ref(비교 구간 내 최대값) | — |
+| 지표 | 같은 격자·정렬 규칙(§5)으로 두 비교를 낸다: `vs_implicit`(기준 = implicit 최적점 해석 곡선), `vs_experiment`(기준 = 시험 곡선). 각각 구간별 e_k(§8 식, 기준 곡선을 F_exp 자리에) + 피크 하중 상대차. (1.1) 케이스에 run이 여럿이면 `vs_experiment` 지표는 run별로 계산해 **산술평균**(`vs_implicit`은 케이스당 1개) ΔF_peak = (F_peak,exp − F_peak,ref)/F_peak,ref(비교 구간 내 최대값) | — |
 | 판정 | `vs_implicit`의 max(e_elastic, e_plastic) > `max_region_error` 또는 \|ΔF_peak\| > `max_peak_rel_diff`이면 경고 `EXPLICIT_CHECK_DEVIATION`. **거절·실패 없음** | `verify.explicit_check.max_region_error`(0.05), `verify.explicit_check.max_peak_rel_diff`(0.05) |
 | 실패 | 비정상 종료·시간 초과 → 경고 `EXPLICIT_CHECK_FAILED`(부분 곡선이 있으면 지표 + shortfall 기록). 실행 불가(어댑터 `supports_overrides=False`, 질량 스케일링 등) → `EXPLICIT_CHECK_SKIPPED` | — |
 | 예산 | `budget.max_evaluations` 밖. history `stage=explicit_check` | — |
@@ -200,6 +200,7 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | 잔차 벡터 | 모든 run·응답·구간 격자점의 √w_k·(F_sim−F_exp)/‖F_exp‖_{Ω_k} 연결 | — |
 | 민감도 | 상대 야코비안 S_{gj} = ∂r_g/∂ln θ_j. 정규화 민감도 ‖S_j‖₂ | — |
 | 상관 | cov = σ²(SᵀS)⁻¹, σ² = ‖r‖²/(n_res − n_p). 상관행렬 = cov_{ij}/√(cov_ii cov_jj). 상대 표준편차 = √cov_jj. **이 상대 표준편차는 하한 추정이다**: 격자점 잔차를 독립으로 가정하지만 같은 곡선의 이웃 격자점은 강하게 상관돼 실제 자유도가 n_res보다 훨씬 작다. 결과에 `relative_stdev_is_lower_bound: true`로 표기. 상관행렬·민감도·조건수(σ²와 무관)는 그대로 유효 | — |
+| (1.1) 계수 비유일 | 계수 모드(`mat024_coeff`)에서 경화식 계수 간 \|corr\|가 높아도 그 자체는 실패가 아니다. 결과 판정·불확도는 테이블 기준(result.md §2) | — |
 | 플래그 | \|corr\| > `corr_threshold` → `HIGH_CORRELATION`(민감도 낮은 쪽 고정 권고). ‖S_j‖ < `min_sensitivity` → `INSENSITIVE_PARAM`(고정 권고). cond(SᵀS) > `max_condition` → `ILL_CONDITIONED` | `corr_threshold`(0.95), `min_sensitivity`(1e-3), `max_condition`(1e8) |
 
 결과 형식은 [result.md §4.5](result.md).
@@ -291,9 +292,9 @@ n차 고속 TestSpec은 같은 `reference_strain_rate()`로 시험별 ε̇를 �
 
 | ID | 내용 | 종류 |
 | --- | --- | --- |
-| T-1 | 정렬 기본값(접촉 2%, 토우 맞춤 10–40%, 파손 30% 급락, N=200, 탄성 최소 30점, k=4)은 plan에 없어 새로 정함. 실시험 적용(G4) 후 조정 | 가정 |
+| T-1 | 정렬 기본값(접촉 2%, 토우 맞춤 10–40%, 탄성 이탈 1.5%(1.1, 이전 5%), 파손 30% 급락, N=200, 탄성 최소 30점, k=4)은 plan에 없어 새로 정함. G2 결과로 탄성 이탈만 조정, 나머지는 실시험 적용(G4) 후 조정 | 가정 |
 | T-2 | (결정 반영) `auto` 변위 채널은 크로스헤드 기본, 처짐계는 `testspec.bending.prefer_deflection=true`로 켜는 옵션 | 확정 |
-| T-7 | 토우 맞춤 구간(`toe_fit_lo/hi` = 10–40%)은 실시험 적용 G4에서 조정할 항목 | 가정(G4 조정) |
+| T-7 | 토우 맞춤 구간(`toe_fit_lo/hi` = 10–40%)과 탄성 이탈 허용(`elastic_dev_tol` = 0.015)은 실시험 적용 G4에서 조정할 항목 | 가정(G4 조정) |
 | T-3 | 비교 구간 상한은 시험 기준으로 고정하고 해석 범위 부족은 8단계 페널티로만 반영(구간이 θ마다 바뀌지 않게) | 가정 |
 | T-4 | 다중 run 결합은 run별 J의 산술평균(평균 곡선을 만들지 않음) — run별 잔차·시편별 통계를 남기기 위함 | 가정 |
 | T-5 | 식별성 사전 점검 실패 시 거절/경고 — 사용자 결정 대기. 현재 기본값 `reject` 유지(설정 `identifiability.precheck_mode`) | 미결 |
@@ -301,3 +302,11 @@ n차 고속 TestSpec은 같은 `reference_strain_rate()`로 시험별 ε̇를 �
 | T-8 | explicit 재현 검사 기본값(ELFORM 1, IHQ 6, QM 0.1, 0.5 m/s, KE/IE 0.05, 구간 오차·피크 5%)은 초기값. 낙하 모델 설정과 맞춰 조정 | 가정 |
 | T-9 | 기준 변형률속도 bending 식 6hV/L², V는 test_speed 우선 | 가정 |
 | U-1 | 성공 기준 오차 임계값 미정 — 결과의 `metadata.residuals`로 판정 가능하도록만 계약 | 미결 |
+
+## 변경 이력
+
+| 버전 | 날짜 | 변경(추가·기본값 조정만, 기존 필드 의미 불변) |
+| --- | --- | --- |
+| 1.0 → 1.1 | 2026-11-08 | `alignment.elastic_dev_tol` 0.05 → 0.015(§5.1), T-1·T-7 갱신 |
+| 1.0 → 1.1 | 2026-11-08 | explicit 검사 `vs_experiment` run 산술평균(§8.1) |
+| 1.0 → 1.1 | 2026-11-08 | 계수 비유일 시 테이블 기준 판정(§9.3) |
