@@ -234,7 +234,7 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("testspec.bending.min_eps_p0", 0.01, "testspec.md §10.5 eps_p_max0 하한", types=_NUM),
     _k("testspec.bending.rate_from_time_channel", True, "testspec.md §10.6"),
     # ---- material (plugins.md §4.3, api.md §4.3) ----
-    _k("material.default_density_kg_m3", 7850.0, f"api.md §4.3 DENSITY_DEFAULTED ({_NO_VALUE})", types=_NUM),
+    _k("material.default_density_kg_m3", 1000.0, "api.md §4.3 DENSITY_DEFAULTED (기본 1000)", types=_NUM),
     _k("material.default_E_range_pa", [1e6, 1e12], "plugins.md §4.3: [lower, upper], log"),
     _k("material.default_sigma_y_range_pa", [1e5, 5e9], "plugins.md §4.3: [lower, upper], log"),
     _k("material.mat024.max_strain", 0.2, "plugins.md §4.3 옵션 max_strain", types=_NUM),

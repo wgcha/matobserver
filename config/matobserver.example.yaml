@@ -300,8 +300,8 @@ testspec:
     rate_from_time_channel: true
 
 material:
-  # api.md §4.3 DENSITY_DEFAULTED (계약 값 없음 — 초기값, 환경/운영에서 조정)
-  default_density_kg_m3: 7850.0
+  # api.md §4.3 DENSITY_DEFAULTED (기본 1000)
+  default_density_kg_m3: 1000.0
   # plugins.md §4.3: [lower, upper], log
   default_E_range_pa: [1000000.0, 1000000000000.0]
   # plugins.md §4.3: [lower, upper], log

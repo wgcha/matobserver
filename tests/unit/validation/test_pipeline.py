@@ -231,9 +231,11 @@ def test_numbers_must_be_numbers_not_strings_or_bools(active_env):
 
 def test_schema_version_forms(active_env):
     e = active_env
-    for v in ("1.0",):
+    for v in ("1.0", "1.1"):  # MINOR 하위 호환: 1.0 · 1.1 모두 수용
         validate(e, calibration_body(schema_version=v))
-    assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="1.1"))
+    assert validate(e, calibration_body(schema_version="1.0")).snapshot["schema_version"] == "1.1"
+    assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="1.2"))
+    assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="2.0"))
     assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="0.9"))
     assert "SCHEMA_INVALID" in failed_codes(e, calibration_body(schema_version="one"))
     b = calibration_body()
@@ -278,6 +280,7 @@ def test_warnings_density_compliance_and_recipe(active_env):
     del b["materials"]["slots"][0]["reference"]["elastic"]["density"]
     v = validate(e, b)
     assert [w["code"] for w in v.warnings] == ["DENSITY_DEFAULTED"] and v.warnings[0]["slot"] == "body"
+    assert "1000" in v.warnings[0]["message"]  # 계약 기본 밀도 1000 kg/m^3
     # 픽스처 레시피에는 C 가 있으므로 COMPLIANCE_MISSING 은 없다. 장비가 다르면 경고.
     r = inline_run()
     r["instrument"] = "UTM-77"
