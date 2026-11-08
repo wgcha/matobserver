@@ -7,7 +7,7 @@ from matobserver.core.config import Config, default_values
 
 def test_new_defaults():
     c = Config({})
-    assert c.get("alignment.elastic_dev_tol") == 0.015
+    assert c.get("alignment.elastic_dev_tol") == 0.01
     assert c.get("material.mat024_table.first_node_strain") == 0.002
     assert c.get("engine.stages.elastic.optimizer") == "lsq"
     assert c.get("engine.stages.plastic.optimizer") == "lsq"

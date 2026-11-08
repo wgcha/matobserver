@@ -246,7 +246,7 @@ alignment:
   # testspec.md §5 7단계 k
   output_oversample: 4
   # testspec.md §5.1
-  elastic_dev_tol: 0.015
+  elastic_dev_tol: 0.01
   # testspec.md §5.1 / CURVE_NO_ELASTIC_REGION
   elastic_min_raw_points: 5
 

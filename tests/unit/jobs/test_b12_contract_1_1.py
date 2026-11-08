@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from matobserver.core.errors import MatObserverError
 
 from be_support import calibration_body, make_hooks
@@ -36,6 +38,17 @@ def test_spec_carries_plasticity_mode_and_explicit_check_equal_to_job_options(ac
     assert spec.explicit_check == seen["opts"]["explicit_check"] and spec.explicit_check is not None
 
 
+def request_cancel(e, jid, services):
+    """실행 중 취소 요청: 응답 확인 후 워커 토큰이 요청을 볼 때까지 상한 있는 폴링 (시간 의존 제거)."""
+    r = e.client.post(f"/v1/calibrations/{jid}/cancel", headers=e.svc)
+    assert r.status_code == 202 and r.json()["cancel_requested"] is True, r.text
+    for _ in range(1000):
+        if services.cancel.is_set():
+            return
+        time.sleep(0.005)
+    raise AssertionError("cancel flag not observed")
+
+
 def _assert_cancelled_without_result(e, jid):
     st = status(e, jid)
     assert st["status"] == "cancelled" and st["error"] is None
@@ -63,7 +76,7 @@ def test_path2_other_exception_after_cancel_request(active_env):
 
     def run(spec, services):
         services.record_eval({"eval_index": 0, "stage": "plastic", "theta": {}, "J": 1.0, "status": "ok", "wall_time_s": 0.1, "is_best": True})
-        e.client.post(f"/v1/calibrations/{jid}/cancel", headers=e.svc)
+        request_cancel(e, jid, services)
         raise RuntimeError("boom")
 
     e.worker(make_hooks(run=run)).run_once()
@@ -77,7 +90,7 @@ def test_path3_normal_return_while_cancel_requested(active_env):
 
     def run(spec, services):
         services.record_eval({"eval_index": 0, "stage": "plastic", "theta": {}, "J": 1.0, "status": "ok", "wall_time_s": 0.1, "is_best": True})
-        e.client.post(f"/v1/calibrations/{jid}/cancel", headers=e.svc)
+        request_cancel(e, jid, services)
         return {"best_J": 1.0}
 
     e.worker(make_hooks(run=run)).run_once()

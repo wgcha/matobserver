@@ -209,7 +209,7 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("alignment.filter.window", 11, "testspec.md §5 6단계"),
     _k("alignment.filter.cfc_class", 60, "testspec.md §5 6단계 (SAE J211 CFC)"),
     _k("alignment.output_oversample", 4, "testspec.md §5 7단계 k"),
-    _k("alignment.elastic_dev_tol", 0.015, "testspec.md §5.1", types=_NUM),
+    _k("alignment.elastic_dev_tol", 0.01, "testspec.md §5.1", types=_NUM),
     _k("alignment.elastic_min_raw_points", 5, "testspec.md §5.1 / CURVE_NO_ELASTIC_REGION"),
     # ---- objective · cases · identifiability ----
     _k("objective.region_weights", {"elastic": 1.0, "plastic": 1.0}, "testspec.md §8: 구간 가중 w_k", types=(dict,)),
