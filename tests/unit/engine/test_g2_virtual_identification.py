@@ -1,8 +1,7 @@
 """G2 가상 역식별 (module-boundaries.md §5.3 O-4·O-5·O-6·O-7) — surrogate_beam 가상 곡선, LS-DYNA 없음.
 
-계약 1.1 기본값으로 돌린다: `alignment.elastic_dev_tol` = 0.015(testspec.md §5.1), `first_node_strain` = 0.002,
-탄소성 기본 최적화기 lsq. core 설정 표가 아직 1.0 값(0.05)이면 G2_CFG 가 1.1 계약 기본값을 명시해 맞춘다(B-13 병합 후 동일).
-1.0 기본값 0.05의 E 편향은 test_elastic_bias_v10_tolerance 가 기록한다.
+설정 기본값(계약 1.1 확정: `alignment.elastic_dev_tol` = 0.01, `first_node_strain` = 0.002, 탄소성 기본 lsq)으로 엄격 기준
+(테이블 3%, J 0.01)을 판정한다. 1.0 값 0.05와 1.1 초안값 0.015의 거동은 명시적 설정의 기록 테스트로 남긴다.
 """
 
 from __future__ import annotations
@@ -19,8 +18,7 @@ from matobserver.engine import preflight, run_calibration
 
 W, H, L, E_TRUE = 0.010, 0.004, 0.064, 2.3e9
 SWIFT = (1.0e8, 0.02, 0.2)
-G2_CFG = {} if Config().get("alignment.elastic_dev_tol") == 0.015 else {"alignment.elastic_dev_tol": 0.015}
-STRICT = {"alignment.elastic_dev_tol": 0.01}  # 3% 테이블 기준을 여유 있게 통과하는 값(1.1 기본 0.015에서는 3.3–3.5%)
+
 
 
 def _single(tmp: Path, model: str, *, noise: float, options=None, optimizer=("", {}), n_eval=120, cfg=None,
@@ -36,7 +34,7 @@ def _single(tmp: Path, model: str, *, noise: float, options=None, optimizer=("",
     if params:
         slot["params"] = params
     spec = D.make_spec([t], [slot], optimizer=optimizer, max_evaluations=n_eval)
-    svc = D.FakeServices(tmp, D.make_registry(), Config({**G2_CFG, **(cfg or {})}))
+    svc = D.FakeServices(tmp, D.make_registry(), Config(dict(cfg or {})))
     return run_calibration(spec, svc), svc
 
 
@@ -60,10 +58,10 @@ def test_o4_elastic_mode_a(tmp_path, noise):
 
 
 @pytest.mark.parametrize("noise", [0.0, 0.005])
-@pytest.mark.parametrize("opt,cfg,tab_tol", [("", STRICT, 0.03), ("", {}, 0.04), ("bo", STRICT, None)])
-def test_o5_coeff_swift(tmp_path, noise, opt, cfg, tab_tol):
-    """"" = 설정 기본 최적화기(1.1: lsq). cfg={} 는 1.1 기본 정렬값 — 테이블 3.5%까지 관측(보고 항목)."""
-    res, _ = _single(tmp_path, "mat024_coeff", noise=noise, optimizer=(opt, {}), cfg=cfg)
+@pytest.mark.parametrize("opt,tab_tol", [("", 0.03), ("bo", None)])
+def test_o5_coeff_swift(tmp_path, noise, opt, tab_tol):
+    """"" = 설정 기본 최적화기(1.1: lsq). 정렬 설정은 기본값."""
+    res, _ = _single(tmp_path, "mat024_coeff", noise=noise, optimizer=(opt, {}))
     s = res["slots"][0]
     J = res["metadata"]["residuals"]["J"]
     assert J <= 0.01, J  # 계수 모드 기준(O-5): F-δ J ≤ 0.01
@@ -77,13 +75,11 @@ def test_o5_coeff_swift(tmp_path, noise, opt, cfg, tab_tol):
 
 
 @pytest.mark.parametrize("noise", [0.0, 0.005])
-@pytest.mark.parametrize("cfg,tab_tol", [(STRICT, 0.03), ({}, 0.04)])
-def test_o5_table(tmp_path, noise, cfg, tab_tol):
-    """cfg={}: 1.1 기본값(elastic_dev_tol 0.015, first_node_strain 0.002, lsq) — 3.3–3.5% 관측(3% 미달, 보고)."""
-    res, _ = _single(tmp_path, "mat024_table", noise=noise, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04},
-                     cfg=cfg)
+def test_o5_table(tmp_path, noise):
+    """설정 기본값(elastic_dev_tol 0.01, first_node_strain 0.002, lsq)에서 테이블 3%."""
+    res, _ = _single(tmp_path, "mat024_table", noise=noise, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04})
     s = res["slots"][0]
-    assert _table_err(s) <= tab_tol
+    assert _table_err(s) <= 0.03
     assert res["metadata"]["residuals"]["J"] <= 0.01
     stresses = [r["true_stress"] for r in s["card_blocks"]["table"]]
     assert all(b >= a for a, b in zip(stresses, stresses[1:]))
@@ -97,8 +93,15 @@ def test_o5_exact_E_table_recovery(tmp_path):
     assert res["metadata"]["residuals"]["J"] <= 0.001
 
 
+def test_record_v11_draft_tolerance(tmp_path):
+    """1.1 초안값 기록: elastic_dev_tol=0.015(명시)에서 테이블 모드 3.0–4.0%(3% 미달) — 0.01 확정 근거."""
+    res, _ = _single(tmp_path, "mat024_table", noise=0.0, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04},
+                     cfg={"alignment.elastic_dev_tol": 0.015})
+    assert 0.03 < _table_err(res["slots"][0]) <= 0.04
+
+
 def test_elastic_bias_v10_tolerance(tmp_path):
-    """1.0 기본 elastic_dev_tol=0.05: 점진 항복 재료에서 탄성 단계 E 편향 −2%~−0.5% (1.1에서 0.015로 바꾼 근거)."""
+    """1.0 기본 elastic_dev_tol=0.05: 점진 항복 재료에서 탄성 단계 E 편향 −2%~−0.5% (1.0 값 기록)."""
     res, _ = _single(tmp_path, "mat024_coeff", noise=0.0, optimizer=("random", {}), n_eval=20,
                      cfg={"identifiability.post_fit": False, "alignment.elastic_dev_tol": 0.05})
     err = res["slots"][0]["card_blocks"]["elastic"]["youngs_modulus"] / E_TRUE - 1
