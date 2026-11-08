@@ -242,7 +242,7 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | O-2 | 정렬 8단계 단위 테스트: 각 단계 수치 규칙(토우·파손 절단·격자 점 수·출력 간격·범위 부족) | testspec.md §5 값과 일치 |
 | O-3 | 컴플라이언스 보정식(엔진 정렬 1단계 c에서만 1회 적용, map_run 경로와 합쳐도 1회) | 합성 곡선 δ_xhead = δ_spec + C·F 에서 복원한 δ의 최대 절대오차 ≤ 1e-12 × (δ_spec 범위). 이중 적용 시 오차가 C·F 크기로 나타나 실패 |
 | O-4 | **G2 가상 역식별(모드 A 탄성)**: `surrogate_beam`으로 만든 곡선(노이즈 0.5%)에서 E 복원 | 상대오차 ≤1% |
-| O-5 | **G2 가상 역식별(탄소성)**: 알려진 Swift 계수로 만든 곡선에서 `mat024_coeff` 계수 복원 / `mat024_table`로 테이블 복원 | F-δ J ≤ 0.01, 테이블 응력 최대 상대오차 ≤3%(유효 범위 내) |
+| O-5 | **G2 가상 역식별(탄소성)**: 알려진 Swift 계수로 만든 곡선에서 `mat024_coeff` 계수 복원 / `mat024_table`로 테이블 복원 | 노이즈 0%: F-δ J ≤ 0.01. 노이즈 있을 때: J ≤ 1.2 × J(참값 파라미터로 계산한 J, 노이즈 바닥값). 공통: 테이블 응력 최대 상대오차 ≤3%(유효 범위 내), `mat024_coeff`·`mat024_table` 둘 다(1.1 보완: 노이즈 시 J 0.01은 구조적으로 도달 불가 — Verifier G2) |
 | O-6 | 모드 B 탄성: 2슬롯 층상, 서로 다른 `stack_axis` 시험 2개 동시 피팅 | 두 E 각각 ≤2% |
 | O-7 | 식별성: 단일 시험 + 2슬롯 → 사전 점검 `IDENTIFIABILITY_UNDERDETERMINED`; 상관 높은 테이블 노드 → `HIGH_CORRELATION` | 판정 일치 |
 | O-8 | 재현성: 같은 `CalibrationSpec`·seed 2회 | 결과 JSON(시각 제외) 동일, `input_hash` 동일 |
