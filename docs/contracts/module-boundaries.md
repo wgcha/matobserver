@@ -1,4 +1,4 @@
-schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
+schema_version: 1.3 · 상태: 승인(G1, MINOR 1.3) · 2026-11-09
 
 # 모듈 경계·구현 소유 계약
 
@@ -9,6 +9,7 @@ schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
 ```
 matobserver/
 ├── pyproject.toml                         # Impl-Backend (의존성은 각자 PR로 추가 요청)
+├── scripts/windows/                       # Impl-Backend (1.3): install.ps1 (deploy.md §1), tests/ (Pester 스모크)
 ├── config/
 │   ├── matobserver.example.yaml           # Impl-Backend (전 설정 키 기본값, §6)
 │   └── plugins.d/
@@ -30,7 +31,7 @@ matobserver/
 │   ├── recipes/                           # Impl-Backend: 매니페스트 파싱·정적 검사(recipe.md §7.1)·저장소·해시·상태
 │   ├── matnexus/                          # Impl-Backend: MatNexus 클라이언트, RunRecord 정규화
 │   ├── validation/                        # Impl-Backend: 잡 생성 검증 파이프라인(api.md §4.7 순서), 플러그인 validate 호출
-│   ├── cli.py                             # Impl-Backend: `matobserver serve|worker|recipe ...`
+│   ├── cli.py                             # Impl-Backend: `matobserver serve|worker|recipe|start|stop|status|doctor|db migrate` (1.3, deploy.md §2)
 │   ├── engine/                            # Impl-Optim: 식별 엔진(단계·θ 조립·목적함수·정렬·케이스·식별성·불확도·결과 조립)
 │   │   ├── run.py                         #   run_calibration() 진입점(§4.1)
 │   │   ├── roundtrip.py                   #   1요소 왕복 검사(result.md §4.9, §4.6)
@@ -279,28 +280,37 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | B-11 | 엔진 대역(가짜 `run_calibration`)으로 E3→E5→E6 종단 흐름 | 통과 |
 | B-12 | (1.1) `CalibrationSpec.plasticity_mode`·`explicit_check` 채움(job_options와 동일값), 취소 3경로(api.md §4.12) → `cancelled`·error null·결과 미저장 | 통과 |
 | B-13 | (1.1) 설정 기본값 갱신: `alignment.elastic_dev_tol`=0.01, `material.mat024_table.first_node_strain`=0.002, `engine.stages.{elastic,plastic}.optimizer`=lsq(1.0 키 별칭) | 통과 |
+| B-15 | (1.3) `doctor` D01–D11 항목별 단위 테스트: 각 항목 OK/WARN/FAIL/SKIP 픽스처, 종료 코드 0/1/2/3, `--json` 스키마(deploy.md §2.2) | 통과 |
+| B-16 | (1.3) `start/stop/status`: process 모드 PID 파일 생성·삭제·stale 처리, 이미 실행 중 start 멱등, 잡 실행 중 stop 거부(코드 4)·`--force`, status 항목·종료 코드(0/3/4/1). scheduler 모드는 `schtasks` 호출 대역(mock) | 통과 |
+| B-17 | (1.3) `db migrate`: `user_version` 전진, 백업 생성, 실패 롤백, 새 DB 거부 | 통과 |
+| B-18 | (1.3) `file:` 비밀값 참조 로드·누락 시 D01 FAIL | 통과 |
+| B-19 | (1.3) install.ps1 Windows CI(windows-latest, Python 3.11): 비대화형 설치(`-NonInteractive -NoSchedule -Wheel <빌드 wheel> -LsDynaBatchScript <더미 .bat>`) → `doctor` 종료 코드 ≤1 → `-Update`(같은 wheel 재설치, 설정·DB 보존 확인) → `-Uninstall`(데이터 보존 확인) 스모크. 종료 코드 11(Python 미달 모사)·14(필수값 누락) 검사 | 통과 |
+| B-20 | (1.3) 버전 일관성: `__version__`·`pyproject` 일치, `CONTRACT_SCHEMA_VERSION == "1.3"`, `/v1/health`·`--version` 노출 | 통과 |
 
 ## 6. 설정 파일
 
-- 파일: `MATOBSERVER_CONFIG`(기본 `./config/matobserver.yaml`). 환경변수 덮어쓰기 `MATOBSERVER__<SECTION>__<KEY>`(대문자, `__` 구분). 비밀값은 `env:VAR` 참조 허용.
+- 파일: `MATOBSERVER_CONFIG`(기본 `./config/matobserver.yaml`). 환경변수 덮어쓰기 `MATOBSERVER__<SECTION>__<KEY>`(대문자, `__` 구분). 비밀값은 `env:VAR` 참조 허용, (1.3) `file:<경로>` 참조 허용(deploy.md §2.4).
 - 환경별 값(경로·배치 스크립트·코어 수·임계값)은 코드에 쓰지 않고 아래 키로만 둔다. 기본값은 각 계약 문서 표의 괄호 값.
 
 | 섹션 | 주요 키 | 정의 문서 |
 | --- | --- | --- |
 | `paths` | `data_dir`, `work_dir` | 이 문서 §4.5 |
+| `runtime` | (1.3) `pid_dir`(기본 `<paths.data_dir>/run`) | deploy.md §2.1 |
+| `logging` | (1.3) `dir`, `max_bytes`(10 MiB), `backups`(5) | deploy.md §1.8 |
+| `doctor` | (1.3) `min_free_bytes`(10 GiB), `command_timeout_s`(10) | deploy.md §2.2 |
 | `jobstore` | `sqlite_path` | |
 | `api` | `host`, `port`, `page_default_limit`, `page_max_limit`, `idempotency_ttl_s`, `max_tests_per_job`, `max_runs_per_test`, `max_slots` | api.md |
 | `auth` | `service_tokens[]`, `admin_tokens[]` | api.md §2 |
 | `files` | `max_bytes` | api.md §4.1 |
 | `artifacts` | `retention_days` | api.md §6 |
-| `matnexus` | `base_url`, `token`, `timeout_s`, `curve_max_points` | api.md §2, result.md §7.1 |
-| `worker` | `cancel_poll_s` | api.md §4.12 |
+| `matnexus` | `base_url`, `token`, `timeout_s`, `curve_max_points`, (1.3) `probe_path`(`/api/test-runs?limit=1`) | api.md §2, result.md §7.1 |
+| `worker` | `cancel_poll_s`, (1.3) `heartbeat_s`(10) | api.md §4.12 |
 | `registry` | `paths` | plugins.md §2 |
 | `recipes` | `store_dir`, `max_bundle_bytes`, `max_unpacked_bytes`, `max_files` | recipe.md §2 |
 | `recipe_verify` | `min_points`, `unit_ratio_tol`, `max_initial_penetration_m`, `max_initial_force_ratio`, `mesh_convergence_tol`, `reference_curve_tol` | recipe.md §7.2 |
 | `cli` | `server_url`, `poll_interval_s` | recipe.md §6 |
 | `solver` | `run_timeout_s`, `kill_grace_s`, `poll_interval_s`, `keep_d3plot`(best\|all\|none), `keep_all_files`, `d3plot_frames`, `implicit.t_end_s`, `explicit.loading_velocity_m_s`, `explicit.max_ke_ratio`, `license_retry.{interval_s,max_wait_s}` | plugins.md §4.2, testspec.md |
-| `solver.lsdyna` | `batch_command`(인자 템플릿 리스트, 예 `["{script}", "-i", "{main}", "-n", "{ncpu}"]`), `script`, `mode`(smp\|mpp), `ncpu`(기본 4), `precision`, `termination_patterns`, `license_error_patterns`, `version_pattern` | plugins.md §4.2 |
+| `solver.lsdyna` | (1.3) `executable`(선택, 버전 정보 읽기용), `version_command`(선택, 실행 없이 버전 출력), `batch_command`(인자 템플릿 리스트, 예 `["{script}", "-i", "{main}", "-n", "{ncpu}"]`), `script`, `mode`(smp\|mpp), `ncpu`(기본 4), `precision`, `termination_patterns`, `license_error_patterns`, `version_pattern` | plugins.md §4.2 |
 | `mesh` | `max_elements`, `min_scaled_jacobian`, `max_aspect_ratio`, `volume_rel_tol_parametric`, `volume_rel_tol_stp`, `gmsh_threads`(1), `jig.rigid_E_pa`(2.1e11), `jig.rigid_poisson`(0.3), `jig.rigid_density_kg_m3`(7850) | plugins.md §5.4, 이 문서 §2 |
 | `geometry` | `layer_sum_rel_tol` | api.md §4.4 |
 | `engine` | `default_solver`, `default_plasticity_mode`, `default_seed`, `stages.elastic.optimizer`(lsq), `stages.plastic.optimizer`(lsq, 1.1), `stages.joint.enabled`(true, 1.2), `stages.joint.optimizer`(lsq), `stages.joint.max_evaluations`(null → ceil(0.2·N)), `stages.joint.e_bound_rel`(0.05), (1.0 별칭) `elastic_stage.optimizer`·`plastic_stage.optimizer`, `stagnation.{k,rel_tol}`, `abort_if_initial_all_failed` | plugins.md §4.1 |
@@ -357,6 +367,7 @@ decisions.md·plan.md 확정 사항이 어느 계약에 반영됐는지.
 | (plan) MatNexus 폴링(콜백 없음) | api.md §4.9 (E5 폴링) |
 | (사용자 승인 2026-11-08) explicit 재현 검사 1차 옵션, 경고 전용 | api.md §4.6.1, plugins.md §4.2 RunOverrides·S12, testspec.md §8.1, result.md §4.12, 이 문서 §4.6·§6 |
 | (사용자 승인 2026-11-08) 기준 변형률속도·속도 의존 미식별 표기, n차 확장 | plugins.md §4.5 RateInfo·T9, testspec.md §10.6·§11, result.md §4.13 |
+| (사용자 결정 2026-11-09) Windows 배포는 PowerShell 설치 스크립트 | deploy.md 전체, 이 문서 §1·§5.4 B-15–B-20·§6 |
 | (plan) 레시피 등록 검증 항목(dry-run, 관통, 메시 수렴, 질량 스케일링·감쇠·하드코딩 재료 경고) | recipe.md §7.2 |
 
 ## 8. 가정·미결
@@ -383,3 +394,4 @@ decisions.md·plan.md 확정 사항이 어느 계약에 반영됐는지.
 | 1.0 → 1.1 | 2026-11-08 | 완료 테스트 M-9, S-12, O-16–O-19, B-12–B-13, 계약 테스트 범위 갱신(§5) |
 | 1.1 → 1.2 | 2026-11-09 | G2 노이즈 분포 기준(O-4·O-5), 노이즈 모델·시드 목록 1–13 |
 | 1.1 → 1.2 | 2026-11-09 | 설정 `engine.stages.joint.*`, `material.mat024_table.smoothing_weight`(§6), 완료 테스트 O-20·O-21 |
+| 1.2 → 1.3 | 2026-11-09 | deploy.md 추가: `scripts/windows/`, CLI 운영 명령 소유(§1), 설정 `runtime`·`logging`·`doctor`·`matnexus.probe_path`·`worker.heartbeat_s`·`solver.lsdyna.executable/version_command`, `file:` 참조(§6), 완료 테스트 B-15–B-20 |

@@ -1,4 +1,4 @@
-schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
+schema_version: 1.3 · 상태: 승인(G1, MINOR 1.3) · 2026-11-09
 
 # 플러그인 계약
 
@@ -686,3 +686,4 @@ class RateInfo:
 | 1.1 → 1.2 | 2026-11-09 | R8·§4.1에 joint 단계(예산 포함·예약, 최적화기 lsq) |
 | 1.1 → 1.2 | 2026-11-09 | 정칙화 목적 규약(`EvalOutcome.J` = J + J_reg, `J_data`·`J_reg` 구성요소) |
 | 1.1 → 1.2 | 2026-11-09 | MaterialModel `resolved_options()`·`regularization_residuals()`, 옵션 `smoothing_weight`·`max_strain_auto` 문서화, 계약 M10 |
+| 1.2 → 1.3 | 2026-11-09 | 내용 변경 없음(버전 번호만 1.3) |

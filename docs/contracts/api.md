@@ -1,4 +1,4 @@
-schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
+schema_version: 1.3 · 상태: 승인(G1, MINOR 1.3) · 2026-11-09
 
 # API 계약 (REST)
 
@@ -16,7 +16,7 @@ matobserver의 외부 계약. 소비자는 MatNexus(서비스 토큰)와 관리�
 | 시각 | ISO 8601 UTC(`2026-11-08T03:12:00Z`) |
 | 필드 이름 | snake_case. 응답에 모르는 필드가 있으면 클라이언트는 무시해야 한다 |
 | 요청 필드 | 엄격: 정의되지 않은 필드는 400 `SCHEMA_INVALID` |
-| `schema_version` | 요청 본문(JSON)에 필수, 모든 응답 본문에 포함. 형식 `"MAJOR.MINOR"` (현재 `"1.2"`; `"1.0"`·`"1.1"` 요청도 수용) |
+| `schema_version` | 요청 본문(JSON)에 필수, 모든 응답 본문에 포함. 형식 `"MAJOR.MINOR"` (현재 `"1.3"`; `"1.0"`–`"1.2"` 요청도 수용) |
 | 페이지 | 목록은 `limit`(기본 `api.page_default_limit`=50, 최대 `api.page_max_limit`=500), `offset`(0부터). 응답 `{items, total, limit, offset}` (MatNexus `Page` 형과 같은 모양) |
 | 경로 비노출 | 어떤 응답에도 서버 파일 경로를 넣지 않는다. 파일은 `file_id`(입력)·`artifact_id`(출력)로만 다룬다 |
 
@@ -502,3 +502,4 @@ verifying ──(검증 PASS)──→ active ──(retire)──→ retired
 | 1.0 → 1.1 | 2026-11-08 | `optimizer` 기본을 `engine.stages.plastic.optimizer`(=lsq)로, `elastic_optimizer` 기본 키를 `engine.stages.elastic.optimizer`로(§4.2) |
 | 1.0 → 1.1 | 2026-11-08 | 취소 처리 규칙과 `CalibrationCancelled` 연계(§4.12) |
 | 1.1 → 1.2 | 2026-11-09 | `progress.stage`·history `stage`·`phase`에 `joint` 추가(공동 재정밀화) |
+| 1.2 → 1.3 | 2026-11-09 | 내용 변경 없음(버전 번호만 1.3; 배포·운영은 deploy.md) |

@@ -1,4 +1,4 @@
-schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
+schema_version: 1.3 · 상태: 승인(G1, MINOR 1.3) · 2026-11-09
 
 # 결과 스키마 계약
 
@@ -429,3 +429,4 @@ LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifac
 | 1.1 → 1.2 | 2026-11-09 | `material_model.options` = 해석된 옵션(자동 max_strain·smoothing_weight), `input_hash` 반영(§2·§4.11) |
 | 1.1 → 1.2 | 2026-11-09 | 슬롯 `regularization` 필드(§2) |
 | 1.1 → 1.2 | 2026-11-09 | `termination.final_stage`·`per_stage.joint`·`e_by_stage`(§4.8) |
+| 1.2 → 1.3 | 2026-11-09 | 내용 변경 없음(버전 번호만 1.3) |
