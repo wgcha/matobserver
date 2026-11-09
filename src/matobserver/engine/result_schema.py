@@ -33,7 +33,7 @@ PARAM_RESULT = {"type": "object", "required": ["value", "unit", "stage", "lower"
 SLOT = {
     "type": "object",
     "required": ["slot", "role", "member_position", "material_model", "card_blocks", "identified_params", "fixed_params",
-                 "valid_range", "extrapolation", "hardening", "derived"],
+                 "valid_range", "extrapolation", "hardening", "derived", "regularization"],
     "properties": {
         "slot": {"type": "string"}, "role": {"enum": ["identify", "fixed"]}, "member_position": _int_n,
         "material_model": {"type": "object", "required": ["name", "version", "options"]},
@@ -49,6 +49,7 @@ SLOT = {
         "hardening": {"type": "object", "required": ["law", "coefficients"],
                       "properties": {"law": {"enum": [None, "swift", "voce", "swift_voce"]}}},
         "derived": {"type": "object", "required": ["lsdyna_keyword"]},
+        "regularization": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["kind", "weight", "J_reg"]}]},
     },
 }
 
@@ -89,7 +90,7 @@ METADATA = {
             "properties": {"reason": {"enum": [None, "missing", "deflectometer"]}}}},
         "equivalence": {"type": "object", "required": ["mode", "load_mode", "configurations", "note"]},
         "termination": {"type": "object", "required": ["reason", "evaluations", "evaluations_failed", "wall_time_s",
-                                                       "per_stage"],
+                                                       "per_stage", "final_stage", "e_by_stage"],
                         "properties": {"reason": {"enum": ["budget", "stagnation", "converged", "wall_time"]}}},
         "roundtrip": {"type": "object", "required": ["enabled", "per_slot"],
                       "properties": {"per_slot": {"type": "array", "items": {"type": "object", "required": [

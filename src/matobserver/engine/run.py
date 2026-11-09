@@ -44,6 +44,7 @@ class StageResult:
     reason: str
     best_J_history: list[float] = field(default_factory=list)
     optimizer: tuple[str, str] = ("", "")  # (name, version)
+    accepted: bool | None = None  # joint 단계만: 채택 여부 (testspec.md §8.2)
 
 
 def _budget(spec: CalibrationSpec, cfg: Any) -> tuple[int, float, float]:
@@ -69,14 +70,16 @@ def _subset(space: ParamSpace, stage: str) -> ParamSpace:
 
 
 def _better(a: EvalRecord, b: EvalRecord | None) -> bool:
+    """단계 최적: 유효 평가 우선, 그다음 최적화 목적(J + J_reg, 1.2)."""
     if b is None:
         return True
-    return (not a.valid, a.J) < (not b.valid, b.J)
+    return (not a.valid, a.objective) < (not b.valid, b.objective)
 
 
 def run_stage(stage: str, space: ParamSpace, opt_spec: tuple[str, Mapping[str, Any]], base_theta: dict[str, float],
               cap: int, ev: Evaluator, services: Any, spec: CalibrationSpec, t_start: float, wall: float,
-              first_stage: bool, total_offset: int, total_budget: int) -> StageResult:
+              first_stage: bool, total_offset: int, total_budget: int, *, record_stage: str | None = None,
+              elastic_only: bool | None = None) -> StageResult:
     cfg, reg = services.config, services.registry
     oname = reg.resolve_name("optimizer", opt_spec[0])
     oentry = reg.enabled_entry("optimizer", oname)
@@ -84,7 +87,9 @@ def run_stage(stage: str, space: ParamSpace, opt_spec: tuple[str, Mapping[str, A
     names = space.names()
     opt.setup(space, int(spec.seed), [{n: float(base_theta[n]) for n in names}])
     # R8: plastic 변수가 있을 때만 탄성 전용 카드. 소성 변수가 전부 고정(또는 없음)이면 고정 카드 전체(탄소성 포함)로 E 피팅
-    elastic_only = stage == "elastic" and ev.prep.has_plastic
+    if elastic_only is None:
+        elastic_only = stage == "elastic" and ev.prep.has_plastic
+    hstage = record_stage or stage
     k = int(cfg.get("engine.stagnation.k"))
     rel_tol = float(cfg.get("engine.stagnation.rel_tol"))
     window = max(1, k * (len(names) + 1))
@@ -107,7 +112,7 @@ def run_stage(stage: str, space: ParamSpace, opt_spec: tuple[str, Mapping[str, A
             reason = "converged"
             break
         th = opt.ask(1)[0]
-        rec = ev.evaluate({**base_theta, **th}, stage, elastic_only=elastic_only)
+        rec = ev.evaluate({**base_theta, **th}, hstage, elastic_only=elastic_only)
         n += 1
         is_best = _better(rec, best)
         if is_best:
@@ -120,8 +125,8 @@ def run_stage(stage: str, space: ParamSpace, opt_spec: tuple[str, Mapping[str, A
                 first_failed += 1
         if first_stage and abort_cfg and n == n_check and first_failed == n_check:
             raise EngineFailure(E.ALL_INITIAL_RUNS_FAILED, f"first {n_check} evaluations all failed")
-        hist.append(best.J if best is not None else math.inf)
-        services.progress(stage, stage_iter=n, iter=total_offset + n, max_evaluations=total_budget,
+        hist.append(best.objective if best is not None else math.inf)
+        services.progress(hstage, stage_iter=n, iter=total_offset + n, max_evaluations=total_budget,
                           evaluations_failed=failed, best_J_stage=float(best.J) if best else None,
                           best_J=float(best.J) if best else None, elapsed_s=time.monotonic() - t_start)
         if n > window:
@@ -131,7 +136,7 @@ def run_stage(stage: str, space: ParamSpace, opt_spec: tuple[str, Mapping[str, A
                 break
     if first_stage and abort_cfg and 0 < n <= n_check and first_failed == n:
         raise EngineFailure(E.ALL_INITIAL_RUNS_FAILED, f"all {n} initial evaluations failed")
-    return StageResult(stage=stage, names=names, space=space, best=best, evaluations=n, failed=failed, reason=reason,
+    return StageResult(stage=hstage, names=names, space=space, best=best, evaluations=n, failed=failed, reason=reason,
                        best_J_history=hist, optimizer=(oname, oentry.version))
 
 
@@ -200,6 +205,12 @@ def run_calibration(spec: CalibrationSpec, services: Any) -> Mapping[str, Any]:
     theta = dict(prep.initial)
     results: list[StageResult] = []
     used = 0
+    from .context import cfg_get
+
+    joint_on = bool(cfg_get(cfg, "engine.stages.joint.enabled")) and "plastic" in stages
+    joint_cap_cfg = cfg_get(cfg, "engine.stages.joint.max_evaluations")
+    joint_reserve = (int(joint_cap_cfg) if joint_cap_cfg else int(math.ceil(0.2 * n_budget))) if joint_on else 0
+    final_sr: StageResult | None = None
     for si, st in enumerate(stages):
         sub = _subset(prep.space, st)
         remaining = n_budget - used
@@ -207,7 +218,11 @@ def run_calibration(spec: CalibrationSpec, services: Any) -> Mapping[str, Any]:
             results.append(StageResult(st, sub.names(), sub, None, 0, 0, "budget"))
             continue
         later = len(stages) - si - 1
-        cap = remaining if later == 0 else max(1, min(remaining - later, int(math.ceil(0.3 * n_budget))))
+        if st == "elastic" and later > 0:
+            cap = max(1, min(remaining - later, int(math.ceil(0.3 * n_budget))))
+        else:
+            reserve = joint_reserve if (st == "plastic" and joint_on) else 0
+            cap = max(1, remaining - later - reserve)
         opt_spec = _stage_optimizer(spec, cfg, st)
         services.progress(st)
         sr = run_stage(st, sub, opt_spec, theta, cap, ev, services, spec, t_start, wall, si == 0, used, n_budget)
@@ -217,21 +232,59 @@ def run_calibration(spec: CalibrationSpec, services: Any) -> Mapping[str, Any]:
             code = E.WALL_TIME_EXCEEDED_NO_VALID if sr.reason == "wall_time" else E.BUDGET_EXHAUSTED_NO_VALID
             raise EngineFailure(code, f"stage {st}: no valid evaluation")
         theta.update({n: sr.best.theta[n] for n in sr.names})
-    # 최종 평가 기록: 마지막 단계 최적점. 탄성 전용 카드로만 평가됐는데 테이블 카드가 있으면 전체 카드로 1회 더(예산 밖).
-    final_rec = results[-1].best if results else None
+        final_sr = sr
+        if st == "plastic" and joint_on and n_budget - used > 0:
+            jr = _joint_stage(prep, ev, services, spec, theta, sr, min(joint_reserve, n_budget - used), t_start, wall,
+                              used, n_budget)
+            used += jr.evaluations
+            results.append(jr)
+            if jr.accepted:
+                theta.update({n: jr.best.theta[n] for n in jr.names})
+                final_sr = jr
+    # 최종 평가 기록: 최종 채택 단계 최적점. 탄성 전용 카드로만 평가됐는데 테이블 카드가 있으면 전체 카드로 1회 더(예산 밖).
+    final_rec = final_sr.best if final_sr is not None else None
     needs_full = any(m.table is not None for m in _final_materials(prep, theta).values())
-    if final_rec is None or (results and results[-1].stage == "elastic" and needs_full and prep.has_plastic) \
-            or not results:
+    if final_rec is None or (final_sr is not None and final_sr.stage == "elastic" and needs_full and prep.has_plastic):
         final_rec = ev.evaluate(theta, "final", elastic_only=False, history_stage="diagnostics")
         ev.finish(final_rec, is_best=True)
         if not final_rec.valid:
             raise EngineFailure(E.BUDGET_EXHAUSTED_NO_VALID, "final evaluation failed")
     services.progress("diagnostics")
-    post, flags, dwarn, diag_raw, n_diag = _diagnostics(prep, ev, results, theta, services)
+    diag_stages = [r for r in results if r.stage != "joint"]
+    if final_sr is not None and final_sr.stage == "joint":  # 사후 진단은 최종 채택 단계 기준(1.2)
+        diag_stages = [final_sr]
+    post, flags, dwarn, diag_raw, n_diag = _diagnostics(prep, ev, diag_stages, theta, services)
     services.progress("finalize")
     return finalize(prep=prep, ev=ev, services=services, results=results, theta=theta, final_rec=final_rec,
                     post_fit=post, flags=flags, diag_warnings=dwarn, diag_raw=diag_raw, n_budget=n_budget,
                     t_start=t_start, wall=wall, created_at=created_at)
+
+
+def _joint_stage(prep: Prepared, ev: Evaluator, services: Any, spec: CalibrationSpec, theta: dict[str, float],
+                 plastic: StageResult, cap: int, t_start: float, wall: float, used: int, n_budget: int) -> StageResult:
+    """(1.2, testspec.md §8.2) E + plastic 변수 공동 재정밀화. E 범위 E₁(1±r)∩원범위, 초기점 = plastic 최적."""
+    from dataclasses import replace as _r
+
+    from .context import cfg_get
+
+    r = float(cfg_get(services.config, "engine.stages.joint.e_bound_rel"))
+    params = []
+    for p in prep.space.params:
+        if p.stage == "elastic" and not p.name.startswith("_test.") and p.name.endswith(".E"):
+            e1 = float(theta[p.name])
+            lo, hi = max(p.lower, e1 * (1 - r)), min(p.upper, e1 * (1 + r))
+            params.append(_r(p, lower=lo, upper=hi, initial=min(max(e1, lo), hi)))
+    for p in plastic.space.params:
+        params.append(_r(p, initial=float(theta[p.name])))
+    names = {p.name for p in params}
+    space = ParamSpace(tuple(params), tuple(c for c in prep.space.constraints if all(n in names for n in c.params)))
+    oname = str(cfg_get(services.config, "engine.stages.joint.optimizer") or "lsq")
+    services.progress("joint")
+    jr = run_stage("joint", space, (oname, {}), theta, cap, ev, services, spec, t_start, wall, False, used, n_budget,
+                   record_stage="joint", elastic_only=False)
+    jr.accepted = bool(jr.best is not None and jr.best.valid and plastic.best is not None
+                       and jr.best.J <= plastic.best.J)
+    return jr
 
 
 def _stage_optimizer(spec: CalibrationSpec, cfg: Any, stage: str) -> tuple[str, Mapping[str, Any]]:

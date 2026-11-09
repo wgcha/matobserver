@@ -216,14 +216,14 @@ def test_progress_and_history_shape(tmp_path):
     svc = _svc(tmp_path)
     run_calibration(_spec(tmp_path, n_eval=10), svc)
     stages = [s for s, _ in svc.progress_log]
-    for st in ("preprocess", "elastic", "plastic", "diagnostics", "finalize"):
+    for st in ("preprocess", "elastic", "plastic", "joint", "diagnostics", "finalize"):
         assert st in stages
     assert stages.index("elastic") < stages.index("plastic") < stages.index("finalize")
     h = svc.evals[0]
     assert set(h) >= {"eval_index", "stage", "theta", "J", "J_components", "status", "run_status", "mode_used",
                       "wall_time_s", "is_best", "started_at"}
     assert [e["eval_index"] for e in svc.evals] == list(range(len(svc.evals)))
-    assert sum(1 for e in svc.evals if e["stage"] in ("elastic", "plastic")) == 10
+    assert sum(1 for e in svc.evals if e["stage"] in ("elastic", "plastic", "joint")) == 10  # joint 도 예산 포함(1.2)
 
 
 def test_o16_default_plastic_optimizer_lsq_and_alias(tmp_path):
@@ -272,3 +272,43 @@ def test_o19_option_priority(tmp_path):
     r2 = run_calibration(spec, svc2)
     assert r2["slots"][0]["material_model"]["name"] == "mat024_coeff"
     assert r2["metadata"]["explicit_check"] == {"enabled": False}
+
+
+def test_o20_joint_stage(tmp_path):
+    svc = _svc(tmp_path)
+    res = run_calibration(_spec(tmp_path, optimizer=("", {}), n_eval=60, n_runs=1), svc)
+    term = res["metadata"]["termination"]
+    stages = [h["stage"] for h in svc.evals if h["stage"] != "diagnostics"]
+    assert "joint" in term["per_stage"] and stages.index("joint") > stages.index("plastic")
+    assert term["evaluations"] == len(stages) <= 60  # 예산 포함
+    assert term["per_stage"]["joint"]["evaluations"] <= 12  # ceil(0.2·60) 예약 상한
+    eb = term["e_by_stage"][0]
+    E1 = eb["elastic"]
+    for h in svc.evals:
+        if h["stage"] == "joint":
+            assert abs(h["theta"]["body.E"] / E1 - 1) <= 0.05 + 1e-12  # ±e_bound_rel
+    assert term["final_stage"] == ("joint" if term["per_stage"]["joint"]["accepted"] else "plastic")
+    if term["final_stage"] == "joint":
+        assert res["slots"][0]["card_blocks"]["elastic"]["youngs_modulus"] == pytest.approx(eb["joint"])
+        assert res["metadata"]["identifiability"]["post_fit"][0]["stage"] == "joint"
+        assert "body.E" in res["metadata"]["identifiability"]["post_fit"][0]["params"]
+    off = run_calibration(_spec(tmp_path, n_eval=20, n_runs=1), _svc(tmp_path, {"engine.stages.joint.enabled": False}, "b"))
+    assert "joint" not in off["metadata"]["termination"]["per_stage"]
+    assert off["metadata"]["termination"]["final_stage"] == "plastic"
+
+
+def test_o21_regularization_split_and_resolved_options(tmp_path):
+    svc = _svc(tmp_path)
+    res = run_calibration(_spec(tmp_path, model="mat024_table", n_eval=30, n_runs=1), svc)
+    s = res["slots"][0]
+    opts = s["material_model"]["options"]
+    assert opts["max_strain_auto"] is True and opts["max_strain"] < 0.2 and opts["smoothing_weight"] == 0.01
+    assert s["regularization"]["kind"] == "adjacent_slope" and s["regularization"]["weight"] == 0.01
+    pl = [h for h in svc.evals if h["stage"] in ("plastic", "joint")]
+    assert all("J_reg" in h["J_components"] for h in pl)
+    el = [h for h in svc.evals if h["stage"] == "elastic"]
+    assert all("J_reg" not in h["J_components"] for h in el)
+    off = run_calibration(_spec(tmp_path, model="mat024_table", n_eval=30, n_runs=1),
+                          _svc(tmp_path, {"material.mat024_table.smoothing_weight": 0.0}, "b"))
+    assert off["slots"][0]["regularization"] is None
+    assert off["metadata"]["traceability"]["input_hash"] != res["metadata"]["traceability"]["input_hash"]

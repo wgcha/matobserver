@@ -320,7 +320,10 @@ def finalize(*, prep: Prepared, ev: Evaluator, services: Any, results: list, the
             kw = "MAT_001"
         slots_out.append({
             "slot": sc.name, "role": sc.role, "member_position": sc.member_position,
-            "material_model": {"name": sc.model_name, "version": sc.model_version, "options": clean(sc.options)},
+            "material_model": {"name": sc.model_name, "version": sc.model_version,
+                               "options": clean(sc.model.resolved_options() if hasattr(sc.model, "resolved_options")
+                                                else sc.options)},
+            "regularization": _regularization(sc, locals_.get(sc.name)),
             "card_blocks": card.to_card_blocks(),
             "identified_params": identified, "fixed_params": fixed,
             "valid_range": (clean(rng) if (rng is not None and card.table is not None) else None),
@@ -385,7 +388,7 @@ def finalize(*, prep: Prepared, ev: Evaluator, services: Any, results: list, the
                             "recommendations": diag_raw.get("recommendations", [])},
         "compliance": [tc.compliance_info for tc in prep.tests],
         "equivalence": _equivalence(prep),
-        "termination": _termination(results, elapsed),
+        "termination": _termination(results, elapsed, prep),
         "roundtrip": rt,
         "warnings": [],
         "traceability": _traceability(prep, ev, results, services),
@@ -482,6 +485,18 @@ def _render_card(arts: Artifacts, ev: Evaluator, prep: Prepared, so: Mapping[str
     ext = ".k" if fmt == "lsdyna_k" else ".txt"
     p = arts.write_text(f"{so['slot']}_card{ext}", text)
     arts.add(p, "card_lsdyna" if fmt == "lsdyna_k" else f"card_{fmt}", slot=so["slot"])
+
+
+def _regularization(sc: SlotCtx, local: Mapping[str, float] | None) -> dict[str, Any] | None:
+    """result.md §2 (1.2) 슬롯 regularization: {kind, weight, J_reg} — 정칙화 없는 모델·식별 안 하는 슬롯은 null."""
+    fn = getattr(sc.model, "regularization_residuals", None)
+    if not sc.identify or fn is None or local is None:
+        return None
+    w = float(getattr(sc.model, "smoothing_weight", 0.0))
+    if w <= 0:
+        return None
+    rr = np.asarray(fn(local), dtype=float)
+    return {"kind": "adjacent_slope", "weight": w, "J_reg": float(np.dot(rr, rr))}
 
 
 def _dedupe(ws: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -612,14 +627,37 @@ def _equivalence(prep: Prepared) -> dict[str, Any]:
             "configurations": confs, "note": "등가 물성은 하중 모드·형상에 의존한다"}
 
 
-def _termination(results: list, elapsed: float) -> dict[str, Any]:
+def _termination(results: list, elapsed: float, prep: Prepared | None = None) -> dict[str, Any]:
     per = {}
     for r in results:
         per[r.stage] = {"reason": r.reason, "evaluations": r.evaluations,
                         "best_eval_index": (r.best.eval_index if r.best is not None else None)}
-    reason = results[-1].reason if results else "converged"
+        if r.stage == "joint":
+            per[r.stage]["accepted"] = bool(r.accepted)
+    by = {r.stage: r for r in results}
+    final_stage = "elastic"
+    if "plastic" in by and by["plastic"].best is not None:
+        final_stage = "plastic"
+    if "joint" in by and by["joint"].accepted:
+        final_stage = "joint"
+    main = [r for r in results if r.stage != "joint" or r.accepted]
+    reason = (by[final_stage].reason if final_stage in by else (results[-1].reason if results else "converged"))
+    e_by_stage = []
+    if prep is not None:
+        for sc in prep.slots:
+            key = f"{sc.name}.E"
+            def _e(st: str):
+                r = by.get(st)
+                return float(r.best.theta[key]) if (r is not None and r.best is not None and key in r.best.theta) else None
+            e1 = _e("elastic")
+            if e1 is None:
+                continue
+            e3 = _e("joint") if ("joint" in by) else None
+            e_by_stage.append({"slot": sc.name, "elastic": e1, "plastic": (_e("plastic") or e1) if "plastic" in by else None,
+                               "joint": e3, "rel_change_joint": ((e3 - e1) / e1 if e3 is not None else None)})
     return {"reason": reason, "evaluations": int(sum(r.evaluations for r in results)),
-            "evaluations_failed": int(sum(r.failed for r in results)), "wall_time_s": float(elapsed), "per_stage": per}
+            "evaluations_failed": int(sum(r.failed for r in results)), "wall_time_s": float(elapsed), "per_stage": per,
+            "final_stage": final_stage, "e_by_stage": e_by_stage}
 
 
 def _rate(prep: Prepared, warnings: list[dict[str, Any]]) -> dict[str, Any]:
@@ -681,7 +719,9 @@ def _traceability(prep: Prepared, ev: Evaluator, results: list, services: Any) -
             if p is not None and Path(p).is_file():
                 stp.append(sha256_digest(Path(p).read_bytes()))
     ch = config_hash(cfg)
-    parts = [spec.request_hash] + [run_hashes[k] for k in sorted(run_hashes)] + sorted(r["content_hash"] for r in recipes) \
+    resolved = sha256_json({sc.name: clean(sc.model.resolved_options() if hasattr(sc.model, "resolved_options")
+                                           else sc.options) for sc in prep.slots})
+    parts = [spec.request_hash, resolved] + [run_hashes[k] for k in sorted(run_hashes)] + sorted(r["content_hash"] for r in recipes) \
         + sorted(stp) + [ch]
     input_hash = sha256_digest("\n".join(str(p) for p in parts).encode("utf-8"))
     sname = ev.solver_name

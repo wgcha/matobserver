@@ -56,6 +56,10 @@ class MaterialBase:
                        if k in ("E0", "sigma_y0", "eps_p_max0") and v is not None and math.isfinite(float(v)) and float(v) > 0}
         return {p.name: float(p.initial) for p in self.param_space().params if p.initial is not None}
 
+    def resolved_options(self) -> Mapping[str, Any]:
+        """(1.2) 실제 적용 옵션 — 기본은 받은 옵션 그대로."""
+        return dict(self.options)
+
     # ---- 보조 ----
     @property
     def nu(self) -> float:

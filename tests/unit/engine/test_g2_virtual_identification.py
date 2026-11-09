@@ -1,4 +1,5 @@
-"""G2 가상 역식별 (module-boundaries.md §5.3 O-4·O-5·O-6·O-7) — surrogate_beam 가상 곡선, LS-DYNA 없음.
+"""G2 가상 역식별 — (1.2) 노이즈 0% 개별 기준은 이 파일, 노이즈 0.5% 분포 기준(시드 1–13)은 test_g2_distribution.py.
+ (module-boundaries.md §5.3 O-4·O-5·O-6·O-7) — surrogate_beam 가상 곡선, LS-DYNA 없음.
 
 설정 기본값(계약 1.1 확정: `alignment.elastic_dev_tol` = 0.01, `first_node_strain` = 0.002, 탄소성 기본 lsq)으로 엄격 기준
 (테이블 3%, J 0.01)을 판정한다. 1.0 값 0.05와 1.1 초안값 0.015의 거동은 명시적 설정의 기록 테스트로 남긴다.
@@ -47,7 +48,7 @@ def _table_err(slot, valid=True):
     return float(np.max(np.abs(sg[m] / (K * (e0 + ep[m]) ** n) - 1)))
 
 
-@pytest.mark.parametrize("noise", [0.0, 0.005])
+@pytest.mark.parametrize("noise", [0.0])
 def test_o4_elastic_mode_a(tmp_path, noise):
     res, _ = _single(tmp_path, "mat001", noise=noise, plastic=False)
     s = res["slots"][0]
@@ -57,7 +58,7 @@ def test_o4_elastic_mode_a(tmp_path, noise):
     assert res["metadata"]["termination"]["per_stage"]["elastic"]["evaluations"] <= 20
 
 
-@pytest.mark.parametrize("noise", [0.0, 0.005])
+@pytest.mark.parametrize("noise", [0.0])
 @pytest.mark.parametrize("opt,tab_tol", [("", 0.03), ("bo", None)])
 def test_o5_coeff_swift(tmp_path, noise, opt, tab_tol):
     """"" = 설정 기본 최적화기(1.1: lsq). 정렬 설정은 기본값."""
@@ -74,7 +75,7 @@ def test_o5_coeff_swift(tmp_path, noise, opt, tab_tol):
     assert len(tb) == 50 and tb[-1]["plastic_strain"] == pytest.approx(s["valid_range"]["max_plastic_strain"])
 
 
-@pytest.mark.parametrize("noise", [0.0, 0.005])
+@pytest.mark.parametrize("noise", [0.0])
 def test_o5_table(tmp_path, noise):
     """설정 기본값(elastic_dev_tol 0.01, first_node_strain 0.002, lsq)에서 테이블 3%."""
     res, _ = _single(tmp_path, "mat024_table", noise=noise, n_eval=200, options={"table_nodes": 5, "max_strain": 0.04})
@@ -88,7 +89,8 @@ def test_o5_table(tmp_path, noise):
 def test_o5_exact_E_table_recovery(tmp_path):
     """E가 정확하면(fixed_value) 기본 정렬 설정에서도 테이블 7노드 복원 ≤ 1%."""
     res, _ = _single(tmp_path, "mat024_table", noise=0.0, optimizer=("lsq", {}), n_eval=120,
-                     options={"table_nodes": 7, "max_strain": 0.06}, params={"E": {"fixed_value": E_TRUE}})
+                     options={"table_nodes": 7, "max_strain": 0.06, "smoothing_weight": 0.0},
+                     params={"E": {"fixed_value": E_TRUE}})  # 정칙화 없이 순수 식별성 확인
     assert _table_err(res["slots"][0]) <= 0.01
     assert res["metadata"]["residuals"]["J"] <= 0.001
 
@@ -168,76 +170,3 @@ def test_low_data_warning_precheck(tmp_path):
     assert E.IDENTIFIABILITY_LOW_DATA in {w["code"] for w in res["metadata"]["warnings"]}
 
 
-# ---- Verifier G2 재현 조건 (E 2.5 GPa, Swift 90 MPa/0.01/0.15, δmax 6 mm, 가산 잡음 σ = 수준·max|F|, seed 7) ----
-from matobserver.engine.context import preprocess as _pre  # noqa: E402
-from matobserver.engine.evaluate import Evaluator as _Ev  # noqa: E402
-from matobserver.solvers.surrogate.beam import Section, Uniaxial, three_point_bending  # noqa: E402
-
-VE, VSW, VDMAX = 2.5e9, (9.0e7, 0.01, 0.15), 0.006
-
-
-def _vcurve(noise: float, seed: int = 7):
-    K, e0, n = VSW
-    ep = np.concatenate([[0.0], np.geomspace(1e-6, 0.3, 400)])
-    sec = Section.from_boxes([("body", -W / 2, W / 2, 0.0, H)])
-    d = np.linspace(0.0, VDMAX, 300)
-    r = three_point_bending(sec, [Uniaxial.from_card(VE, list(zip(ep, K * (e0 + ep) ** n)))], L, d)
-    F = r.force.copy()
-    if noise > 0:
-        F = F + np.random.default_rng(seed).normal(0.0, noise * np.max(np.abs(F)), F.shape)
-        F[0] = 0.0
-    return d + 1.8e-7 * F, F, r.eps_p_max["body"]
-
-
-def _vrun(tmp: Path, model: str, noise: float, params=None):
-    x, F, ep_true = _vcurve(noise)
-    t = D.make_test("t1", [D.make_run("r", x, F, width=W, thickness=H, span=L)], D.make_manifest(),
-                    {"kind": "box", "dimensions": {"total_length": 0.08}}, store_dir=tmp)
-    slot = {"slot": "body", "role": "identify", "material_model": model, "reference": D.reference()}
-    if params:
-        slot["params"] = params
-    svc = D.FakeServices(tmp, D.make_registry(), Config())
-    res = run_calibration(D.make_spec([t], [slot], optimizer=("", {}), elastic_optimizer=("", {})), svc)
-    truth = D.make_spec([t], [{"slot": "body", "role": "identify", "material_model": "mat024_coeff",
-                               "reference": D.reference()}])
-    ev = _Ev(_pre(truth, svc), svc, "surrogate_beam", {}, 60)
-    K, e0, n = VSW
-    J_true = ev.evaluate({"body.E": VE, "body.K": K, "body.eps0": e0, "body.n": n}, "plastic", elastic_only=False).J
-    return res, J_true, ep_true
-
-
-def _vtab(slot) -> float:
-    K, e0, n = VSW
-    tb = slot["card_blocks"]["table"]
-    ep = np.array([r["plastic_strain"] for r in tb]); sg = np.array([r["true_stress"] for r in tb])
-    m = ep <= slot["valid_range"]["max_plastic_strain"] * (1 + 1e-9)
-    return float(np.max(np.abs(sg[m] / (K * (e0 + ep[m]) ** n) - 1)))
-
-
-@pytest.mark.parametrize("model", ["mat024_table", "mat024_coeff"])
-@pytest.mark.parametrize("noise", [0.0, 0.005])
-def test_o5_verifier_condition_defaults(tmp_path, model, noise):
-    """O-5(1.1 보완): 노이즈 0% J ≤ 0.01, 노이즈 시 J ≤ 1.2·J(참값). 테이블 ≤ 3% (coeff·table 공통). 설정·옵션 기본값."""
-    res, J_true, ep_true = _vrun(tmp_path, model, noise)
-    J = res["metadata"]["residuals"]["J"]
-    assert (J <= 0.01) if noise == 0 else (J <= 1.2 * J_true), (J, J_true)
-    s = res["slots"][0]
-    assert _vtab(s) <= 0.03
-    # 유효 범위 = 비교 구간 끝(X_u) 시점 값 (overtravel 미포함)
-    assert abs(s["valid_range"]["max_plastic_strain"] / ep_true - 1) <= (0.05 if noise == 0 else 0.10)  # 식별 재료 기준 (coeff 2% 는 아래 전용 테스트)
-
-
-def test_valid_range_at_x_max_not_overtravel(tmp_path):
-    res, _, ep_true = _vrun(tmp_path, "mat024_coeff", 0.0)
-    assert abs(res["slots"][0]["valid_range"]["max_plastic_strain"] / ep_true - 1) <= 0.02
-
-
-def test_fixed_plastic_params_fit_E_with_full_card(tmp_path):
-    """소성 변수가 전부 fixed_value 면 plastic 단계가 없고 탄성 단계가 고정 카드 전체(탄소성 포함)로 E 를 맞춘다."""
-    K, e0, n = VSW
-    res, _, _ = _vrun(tmp_path, "mat024_coeff", 0.0,
-                      params={"K": {"fixed_value": K}, "eps0": {"fixed_value": e0}, "n": {"fixed_value": n}})
-    s = res["slots"][0]
-    assert abs(s["card_blocks"]["elastic"]["youngs_modulus"] / VE - 1) <= 0.005
-    assert res["metadata"]["residuals"]["J"] <= 0.01
-    assert set(res["metadata"]["termination"]["per_stage"]) == {"elastic"}

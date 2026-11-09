@@ -64,11 +64,20 @@ class EvalRecord:
     is_best: bool = False
     reg_residual: np.ndarray = field(default_factory=lambda: np.array([]))
 
+    @property
+    def J_reg(self) -> float:
+        return float(np.dot(self.reg_residual, self.reg_residual)) if self.reg_residual.size else 0.0
+
+    @property
+    def objective(self) -> float:
+        """(1.2) 최적화 목적 = J(데이터) + J_reg (plastic·joint 단계). J 정의는 불변(testspec.md §8.3)."""
+        return float(self.J) + self.J_reg
+
     def outcome(self) -> EvalOutcome:
-        comp: dict[str, float] = {}
+        comp: dict[str, float] = {"J_data": float(self.J), "J_reg": self.J_reg}
         for i, v in enumerate(np.concatenate([self.residual, self.reg_residual])):
             comp[f"{RESIDUAL_PREFIX}{i:07d}"] = float(v)
-        return EvalOutcome(J=float(self.J), penalized=bool(self.penalized), components=comp)
+        return EvalOutcome(J=self.objective, penalized=bool(self.penalized), components=comp)
 
 
 def split_theta(prep: Prepared, theta: Mapping[str, float]) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
@@ -304,7 +313,7 @@ class Evaluator:
                 "stage": rec.stage,
                 "theta": dict(rec.theta),
                 "J": float(rec.J),
-                "J_components": _jsonable(rec.components),
+                "J_components": _jsonable({**rec.components, **({"J_reg": rec.J_reg} if rec.reg_residual.size else {})}),
                 "status": "penalized" if rec.penalized else "ok",
                 "run_status": {f"{c.test_key}/{cid}": c.state for cid, c in rec.cases.items()},
                 "mode_used": {f"{c.test_key}/{cid}": (c.status.mode_used if c.status else None)

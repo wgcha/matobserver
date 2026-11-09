@@ -145,3 +145,24 @@ def test_m9_call_order(make_plugin):
                 assert p.lower <= g[p.name] <= p.upper
         spaces.append(sp)
     assert spaces[0] == spaces[1]
+
+
+def test_m10_resolved_options_and_regularization(make_plugin, plugin_name):
+    m = _model(make_plugin, {})
+    ro = m.resolved_options()
+    assert isinstance(ro, dict)
+    if plugin_name != "mat024_table":
+        return
+    assert "max_strain" in ro and "smoothing_weight" in ro
+    th = {p.name: p.initial for p in m.param_space().params}
+    lin = dict(th)
+    nodes = np.asarray(m.nodes)
+    slope = 1e9
+    for i in range(1, len(nodes)):
+        lin[f"dsig_{i}"] = slope * (nodes[i] - nodes[i - 1])
+    r = m.regularization_residuals(lin)
+    assert len(r) == len(nodes) - 2 and np.allclose(r, 0.0, atol=1e-9)
+    m0 = _model(make_plugin, {"smoothing_weight": 0.0})
+    assert m0.regularization_residuals(th).size == 0
+    auto = _model(make_plugin, {"max_strain_auto": True, "max_strain": 0.2})
+    assert auto.resolved_options()["max_strain"] == pytest.approx(min(0.2, HINTS["eps_p_max0"] + HINTS["sigma_y0"] / HINTS["E0"]))

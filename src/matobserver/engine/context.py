@@ -49,10 +49,16 @@ MATERIAL_CONFIG_OPTIONS = {  # 설정 → 재료 모델 옵션 (요청·레지�
     "table_spacing": "result.table_spacing",
     "table_first_step": "result.table_first_step",
     "first_node_strain": "material.mat024_table.first_node_strain",  # 1.1
+    "smoothing_weight": "material.mat024_table.smoothing_weight",  # 1.2
 }
 
-CONTRACT_1_1_DEFAULTS = {  # core 설정 표에 아직 없을 때의 1.1 계약 기본값
+CONTRACT_1_1_DEFAULTS = {  # core 설정 표에 아직 없을 때의 계약 기본값
     "material.mat024_table.first_node_strain": 0.002,
+    "material.mat024_table.smoothing_weight": 0.01,
+    "engine.stages.joint.enabled": True,
+    "engine.stages.joint.optimizer": "lsq",
+    "engine.stages.joint.max_evaluations": None,
+    "engine.stages.joint.e_bound_rel": 0.05,
     "engine.stages.elastic.optimizer": "lsq",
     "engine.stages.plastic.optimizer": "lsq",
 }

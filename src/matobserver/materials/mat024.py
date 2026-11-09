@@ -151,6 +151,12 @@ class Mat024Coeff(_Mat024Common):
         rows = tuple(TableRow(float(e), float(s)) for e, s in zip(eps, sig))
         return NeutralMaterial(elastic=self.elastic_block(float(theta_local["E"])), table=rows)
 
+    def resolved_options(self) -> Mapping[str, Any]:
+        out = dict(self.options)
+        out.update({"hardening_law": self.law, "table_points": self.table_points, "max_strain": self.max_strain,
+                    "table_spacing": self.table_spacing, "table_first_step": self.first_step})
+        return out
+
     def describe(self, theta_local: Mapping[str, float]) -> Mapping[str, Any]:
         keys = {"swift": ("K", "eps0", "n"), "voce": ("sigma_y", "Q", "b"),
                 "swift_voce": ("K", "eps0", "n", "sigma_y", "Q", "b", "alpha")}[self.law]
@@ -247,18 +253,34 @@ class Mat024Table(_Mat024Common):
         rows = tuple(TableRow(float(e), float(s)) for e, s in zip(self.nodes, sig))
         return NeutralMaterial(elastic=self.elastic_block(float(theta_local["E"])), table=rows)
 
-    def regularization_residuals(self, theta_local: Mapping[str, float]) -> np.ndarray:
-        """인접 구간 기울기 변화 정칙화 잔차 (선택 기능, 엔진이 getattr 로 찾아 최적화기 잔차에만 붙인다 — J 정의 불변).
+    @property
+    def smoothing_weight(self) -> float:
+        v = self.options.get("smoothing_weight", self.options.get("smoothing", 0.01))
+        return float(0.01 if v is None else v)
 
-        r_i = w·(k_{i+1} − k_i)·εp_max/σ_ref,  k_i = (σ_{i+1}−σ_i)/(εp_{i+1}−εp_i). w = 옵션 `smoothing`(기본 0.01, 0이면 끔).
-        가까운 노드(특히 εp=0 항복 노드와 첫 노드) 사이의 상호 보상(비식별)을 억제한다."""
-        w = float(self.options.get("smoothing", 0.01))
-        if w <= 0 or self.m < 2:
+    def regularization_residuals(self, theta_local: Mapping[str, float]) -> np.ndarray:
+        """testspec.md §8.3 인접 기울기 정칙화: r_i = √w·(s_{i+1} − s_i)/s_ref, s_i = 노드 구간 기울기,
+        s_ref = σ_y/max_strain(적용값). w = `smoothing_weight`(0이면 빈 배열). 길이 m−1."""
+        w = self.smoothing_weight
+        if w <= 0:
             return np.array([])
+        if self.m < 2:
+            return np.zeros(0)
         sig = self.node_stresses(theta_local)
         k = np.diff(sig) / np.diff(self.nodes)
-        ref = max(float(theta_local["sigma_y"]), 1.0)
-        return w * np.diff(k) * float(self.nodes[-1]) / ref
+        s_ref = max(float(theta_local["sigma_y"]), 1e-300) / float(self.nodes[-1])
+        return math.sqrt(w) * np.diff(k) / s_ref
+
+    def resolved_options(self) -> Mapping[str, Any]:
+        out = dict(self.options)
+        out.update({"table_nodes": int(self.table_nodes), "node_spacing": self.node_spacing,
+                    "max_strain": float(self.max_strain), "max_strain_auto": bool(self._max_strain_auto),
+                    "first_node_strain": float(self.options.get("first_node_strain") or 0.002),
+                    "smoothing_weight": self.smoothing_weight})
+        out.pop("smoothing", None)
+        if self.node_spacing == "explicit":
+            out["strain_nodes"] = [float(v) for v in self.nodes]
+        return out
 
     def describe(self, theta_local: Mapping[str, float]) -> Mapping[str, Any]:
         return {"hardening": {"law": None, "coefficients": None}, "node_strains": [float(v) for v in self.nodes],
