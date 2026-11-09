@@ -55,7 +55,7 @@ def neutral_from_card_blocks(blocks: Mapping[str, Any]) -> NeutralMaterial:
 
 def load_reference_card(recipe_dir: Path, manifest: Mapping[str, Any]) -> dict[str, NeutralMaterial]:
     rel = manifest["verification"]["reference_card"]
-    data = yaml.safe_load((Path(recipe_dir) / rel).read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load((Path(recipe_dir) / rel).read_bytes().decode("utf-8")) or {}
     return {str(slot): neutral_from_card_blocks(blocks) for slot, blocks in data.items()}
 
 

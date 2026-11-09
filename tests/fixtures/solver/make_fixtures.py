@@ -50,7 +50,7 @@ def make_reference_binout() -> None:
     x_m = 0.8 * ty * 1e-3
     y_n = 4.0 * fq
     rel_m = (0.7 - 0.05) * ty * 1e-3  # midspan − support, sign −1
-    with open(out / "reference_curve.csv", "w") as f:
+    with open(out / "reference_curve.csv", "w", newline="\n") as f:
         f.write("# S-5 expected: t[s], x_crosshead[m], force[N], x_deflection[m]\n")
         for row in zip(ty, x_m, y_n, rel_m):
             f.write(",".join(repr(float(v)) for v in row) + "\n")
@@ -75,7 +75,7 @@ def make_logs() -> None:
     d = HERE / "logs"
     d.mkdir(exist_ok=True)
     for name, text in LOGS.items():
-        (d / name).write_text(text)
+        (d / name).write_text(text, newline="\n")
 
 
 if __name__ == "__main__":

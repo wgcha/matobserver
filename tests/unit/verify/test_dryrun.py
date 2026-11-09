@@ -122,3 +122,16 @@ def test_reference_card_missing_slot_is_error(tmp_path, monkeypatch):
                                                                  "poisson_ratio: 0.3, density: 1000.0}}\n")
     rep, _ = _run(tmp_path, "bending3p-param", recipe_dir=rdir)
     assert rep["status"] == "error" and "body" in rep["error"]["message"]
+
+
+def test_crlf_recipe_dry_run_same_verdict(tmp_path, monkeypatch):
+    ss.set_behavior(monkeypatch, tmp_path, {})
+    rdir = tmp_path / "recipe"
+    shutil.copytree(ss.RECIPES / "bending3p-fixed", rdir)
+    for f in rdir.rglob("*"):
+        if f.is_file():
+            f.write_bytes(f.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    rep, _ = _run(tmp_path / "crlf", "bending3p-fixed", recipe_dir=rdir)
+    ref, _ = _run(tmp_path / "lf", "bending3p-fixed")
+    assert rep["status"] == ref["status"] == "passed_with_warnings"
+    assert _codes(rep) == _codes(ref)

@@ -45,8 +45,9 @@ def behavior() -> dict:
 
 def write_logs(d: Path, body: str, term: str | None) -> None:
     text = HEADER + body + ("\n" + term + "\n" if term else "\n")
-    (d / "d3hsp").write_text(text)
-    (d / "messag").write_text(text)
+    nl = "\r\n" if behavior().get("crlf_logs") else None  # Windows LS-DYNA 로그 모사
+    (d / "d3hsp").write_text(text, newline=nl)
+    (d / "messag").write_text(text, newline=nl)
 
 
 def mode_of(d: Path) -> str:

@@ -108,6 +108,22 @@ def comment(*names: str, width: int = STANDARD_WIDTH) -> str:
 # ======================================================================================
 # 리더
 # ======================================================================================
+def normalize_newlines(text: str) -> str:
+    """CRLF·CR → LF. 읽기는 줄바꿈 종류와 무관하게 같은 결과를 낸다(Windows 덱·로그 허용)."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def split_lines(text: str) -> list[str]:
+    """줄 목록 (CRLF·CR 허용). str.splitlines 와 달리 \f·\v 등에서는 나누지 않는다."""
+    lines = normalize_newlines(text).split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def read_text(path: Path) -> str:
+    """덱·로그 파일 텍스트 (줄바꿈 LF 정규화, 인코딩 오류는 대체 문자)."""
+    return normalize_newlines(Path(path).read_bytes().decode("utf-8", errors="replace"))
 @dataclass
 class KeywordBlock:
     """키워드 하나와 데이터 줄(주석 제외). `name`은 `*` 없이 대문자, 옵션 접미사 포함(예 `SET_NODE_LIST_TITLE`)."""
@@ -149,8 +165,7 @@ def parse_k(text: str, source: str = "") -> list[KeywordBlock]:
     """키워드 블록 목록. `$` 주석 줄과 빈 줄은 버린다. `*END` 뒤는 읽지 않는다. `*KEYWORD` 자체도 블록으로 남긴다."""
     blocks: list[KeywordBlock] = []
     current: KeywordBlock | None = None
-    for no, raw_line in enumerate(text.splitlines(), start=1):
-        line = raw_line.rstrip("\r\n")
+    for no, line in enumerate(split_lines(text), start=1):
         if not line.strip() or line.lstrip().startswith("$"):
             continue
         if line.startswith("*"):
@@ -167,7 +182,7 @@ def parse_k(text: str, source: str = "") -> list[KeywordBlock]:
 
 
 def read_k(path: Path) -> list[KeywordBlock]:
-    return parse_k(Path(path).read_text(encoding="utf-8", errors="replace"), source=str(path))
+    return parse_k(read_text(path), source=str(path))
 
 
 def split_fields(line: str, widths: int | Sequence[int] = STANDARD_WIDTH) -> list[str]:
@@ -281,7 +296,7 @@ def includes(blocks: Iterable[KeywordBlock]) -> list[str]:
 def param_refs(text: str) -> set[str]:
     """덱 텍스트의 `&name` 참조(주석 제외, 소문자)."""
     refs: set[str] = set()
-    for line in text.splitlines():
+    for line in split_lines(text):
         if line.lstrip().startswith("$"):
             continue
         for m in re.finditer(r"&([A-Za-z][A-Za-z0-9_]*)", line):
@@ -326,8 +341,8 @@ def _ints(fields: Sequence[str]) -> list[int]:
 
 def read_mesh(path: Path) -> MeshData:
     """메시 .k(시편·지그) 파싱. `*ELEMENT_SOLID`는 요소당 2줄 형식(1줄 = EID·PID)과 1줄 형식(EID PID N1..N8) 모두 읽는다."""
-    text = Path(path).read_text(encoding="utf-8")
-    md = MeshData(header_comments=[ln for ln in text.splitlines()[:6] if ln.startswith("$")])
+    text = read_text(path)
+    md = MeshData(header_comments=[ln for ln in split_lines(text)[:6] if ln.startswith("$")])
     blocks = parse_k(text, source=str(path))
     for b in blocks:
         md.keywords.append(b.name)

@@ -216,7 +216,7 @@ class LsDynaAdapter:
         d3hsp = self.result_dir(prepared, status) / "d3hsp"
         if not d3hsp.is_file():
             return None
-        mm = initial_penetration_mm(d3hsp.read_text(encoding="utf-8", errors="replace"), self.penetration_pattern)
+        mm = initial_penetration_mm(d3hsp.read_bytes().decode("utf-8", errors="replace"), self.penetration_pattern)
         return None if mm is None else units.mm_to_m(mm)
 
     def solver_version(self) -> str | None:

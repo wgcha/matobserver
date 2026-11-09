@@ -73,7 +73,9 @@ def initial_slope(x: np.ndarray, y: np.ndarray, lo: float, hi: float, min_points
 def read_reference_csv(path: Path) -> CurveData:
     """기대 F-δ CSV (x[m], y[N]). 머리 줄·`#` 주석 허용."""
     rows = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    from ..deck.kfile import read_text, split_lines
+
+    for line in split_lines(read_text(path)):
         s = line.strip()
         if not s or s.startswith("#"):
             continue

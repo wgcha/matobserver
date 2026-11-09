@@ -1,0 +1,3 @@
+# Impl-Solver 픽스처: 합성 binout 은 바이너리(autocrlf 변환 금지). 텍스트 픽스처는 CRLF 로 체크아웃돼도 리더가 허용한다.
+binout binary
+*.bin binary

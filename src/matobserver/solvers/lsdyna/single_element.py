@@ -49,7 +49,7 @@ def binding() -> SlotBinding:
 def write_deck(material: NeutralMaterial, strain_max: float, workdir: Path, steps: int = 100) -> Path:
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    (workdir / MAT_FILE).write_text(slot_file_text(binding(), material), encoding="ascii")
+    (workdir / MAT_FILE).write_text(slot_file_text(binding(), material), encoding="ascii", newline="\n")
     t_end = 1.0
     dt = t_end / steps
     u_end = end_displacement_mm(material, strain_max)
@@ -89,7 +89,7 @@ def write_deck(material: NeutralMaterial, strain_max: float, workdir: Path, step
               c([4, 1, 2, LCID_PULL, 1.0])]
     lines += ["*DEFINE_CURVE", c([LCID_PULL]), f"{0.0:>20.12E}{0.0:>20.12E}", f"{t_end:>20.12E}{u_end:>20.12E}", "*END"]
     main = workdir / MAIN_FILE
-    main.write_text("\n".join(lines) + "\n", encoding="ascii")
+    main.write_text("\n".join(lines) + "\n", encoding="ascii", newline="\n")
     return main
 
 

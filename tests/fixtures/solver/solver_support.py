@@ -101,7 +101,7 @@ def write_specimen(out_dir: Path, **kw) -> MeshResult:
     out_dir.mkdir(parents=True, exist_ok=True)
     text, info = specimen_text(**kw)
     p = out_dir / "specimen.k"
-    p.write_text(text)
+    p.write_text(text, newline="\n")
     h = kw.get("thick_mm", THICK * 1e3) * 1e-3
     return MeshResult(
         mesh_path=p, node_count=info["node_count"], element_count=info["element_count"],
@@ -162,7 +162,7 @@ def write_jig(out_dir: Path, **kw) -> JigResult:
     out_dir.mkdir(parents=True, exist_ok=True)
     text, refs = jig_text(**kw)
     p = out_dir / "jig.k"
-    p.write_text(text)
+    p.write_text(text, newline="\n")
     return JigResult(mesh_path=p, reference_nodes=refs, part_ids={"indenter": 1001, "support": 1002})
 
 

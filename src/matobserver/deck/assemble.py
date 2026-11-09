@@ -237,7 +237,7 @@ def recipe_deck_files(manifest: Mapping[str, Any]) -> tuple[str, dict[str, str]]
 
 def read_recipe_texts(case: SimulationCase) -> dict[str, str]:
     _, mapping = recipe_deck_files(case.manifest)
-    return {src: (Path(case.recipe_dir) / src).read_text(encoding="utf-8", errors="replace") for src in mapping}
+    return {src: kfile.read_text(Path(case.recipe_dir) / src) for src in mapping}
 
 
 def check_overrides(case: SimulationCase, overrides: RunOverrides, params: Mapping[str, tuple[str, float]]) -> None:
