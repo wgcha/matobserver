@@ -1,4 +1,4 @@
-schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
+schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
 
 # 플러그인 계약
 
@@ -168,7 +168,7 @@ plugins:
 | R5 fixed 슬롯 | `role=fixed`면 `to_neutral`을 부르지 않고 `reference`를 `NeutralMaterial`로 그대로 쓴다. θ에 기여 0 |
 | R6 결과 | 결과는 슬롯별 `card_blocks`([result.md §3](result.md)) |
 | R7 제약 | 슬롯 내부 제약만 허용(슬롯 간 제약 없음, 1차) |
-| R8 순서 | 2단계: `elastic` 단계(모든 identify 슬롯의 E) → `plastic` 단계(E 고정). plastic 변수가 없으면 plastic 단계 생략. **elastic 단계 해석은 탄성 전용 카드**: 엔진이 identify 슬롯 `to_neutral` 결과에서 `table`을 None으로 바꿔(MAT_001 등가) 솔버에 넘긴다(σy 초기값에 의한 E 편향 방지, [testspec.md §8](testspec.md)) |
+| R8 순서 | 2단계: `elastic` 단계(모든 identify 슬롯의 E) → `plastic` 단계(E 고정). plastic 변수가 없으면 plastic 단계 생략. (1.2) plastic 뒤 공동 재정밀화 `joint` 단계(E + 소성 변수, E 범위는 E₁ 중심 ±`e_bound_rel`, [testspec.md §8.2](testspec.md))가 기본으로 이어진다. **elastic 단계 해석은 탄성 전용 카드**: 엔진이 identify 슬롯 `to_neutral` 결과에서 `table`을 None으로 바꿔(MAT_001 등가) 솔버에 넘긴다(σy 초기값에 의한 E 편향 방지, [testspec.md §8](testspec.md)) |
 | R9 비재료 파라미터 | θ에는 재료 외 공급자의 변수도 들어간다. 공급자 = 시험별 `TestSpec.param_space(test_input, manifest)`(레시피 매니페스트 파라미터 중 식별 대상 포함). 이름 공간 `"_test.{test_key}.{param}"`(예: `_test.t1.mu`, `_test.t1.time_shift`). 슬롯 이름은 `^[a-z]`로 시작하므로 `_` 접두사와 충돌하지 않는다. R2 조립 시 슬롯 공간 뒤에 시험 순서대로 붙이고, 단계 태그(`friction`, `alignment` 등 Stage 확장값)를 따른다. 평가 시 엔진이 `"_test.{test_key}."` 접두사로 잘라 `TestSpec.param_targets()`가 가리키는 대상(레시피 파라미터 덮어쓰기 `recipe:fric`, 정렬 보조 변수 `alignment:time_shift`)에 넣는다. **1차 bending은 빈 공간**이지만 이 경로는 계약·엔진에 존재해야 한다. 결과는 `metadata.tests[].identified_params`([result.md §4.1](result.md)) |
 
 ## 4. 인터페이스
@@ -212,6 +212,8 @@ class Optimizer(Protocol):
 - 종료 판정의 주체는 엔진: 예산(`budget.max_evaluations`), 정체, 시간, 취소. 최적화기는 `suggest_stop`으로 수렴만 알린다.
 - (1.1) 정체 판정: 단계 최적 J의 상대 개선이 최근 **k·(d+1) 평가**(k = `engine.stagnation.k`, d = 단계 변수 수) 동안 `engine.stagnation.rel_tol` 미만이면 종료. 차분 기반 최적화기의 한 반복이 d+1 평가이므로 「연속 k회」를 반복 단위로 본다.
 - (1.1) 단계별 예산: plastic 단계가 있으면 elastic 단계 평가 상한 = max(1, ceil(0.3·N)) (N = `budget.max_evaluations`), 남은 평가는 plastic 단계. 진단·왕복·explicit 검사는 예산 밖.
+- (1.2) joint 단계가 켜져 있으면 예산에 포함: joint 상한 = `engine.stages.joint.max_evaluations`(null → ceil(0.2·N)), 잡 시작 시 예약하고 plastic 상한 = N − elastic 사용 수 − joint 예약. 최적화기 인스턴스는 단계마다 새로 만든다(`engine.stages.joint.optimizer`=lsq).
+- (1.2) 정칙화: plastic·joint 단계에서 `EvalOutcome.J` = J(데이터) + J_reg, 잔차 벡터 뒤에 정칙화 잔차를 같은 `residual:` 키 체계로 이어 붙인다([testspec.md §8.3](testspec.md)). `components["J_data"]`, `components["J_reg"]`에 각각 기록.
 - (1.1) 잔차 전달 규약: 엔진은 `tell`의 `EvalOutcome.components`에 잔차 벡터 r을 `"residual:{i:07d}"` 키로 싣는다. r = [testspec.md §9.3](testspec.md)의 √(scale·w_k)·(F_sim − F_exp)/‖F_exp‖_{Ω_k}을 시험·run·응답·구간 순으로 연결한 것(scale = 그 run·응답의 결합 가중, 해석 범위 밖 격자점은 F_sim = 0, w_k = 0 구간은 제외해 단계 안에서 길이 고정). `lsq`는 이 벡터가 있으면 Gauss–Newton/LM, 없으면 J 스칼라 모드. 접두사는 옵션 `residual_prefix`(기본 `"residual:"`)로만 바꿀 수 있다.
 - (1.1) 단계별 기본 최적화기: `engine.stages.elastic.optimizer`(=`lsq`), `engine.stages.plastic.optimizer`(=`lsq`). BO는 옵션(요청 `optimizer: "bo"`). 근거: G2에서 Swift 계수 강상관으로 BO 테이블 오차 3–11%, lsq 1% 이내. 1.0 키 `engine.elastic_stage.optimizer`·`engine.plastic_stage.optimizer`는 호환 별칭으로 읽되 새 키가 우선.
 - `bo` 기본 옵션 키: `n_initial`(기본 `max(4, 2·d)`), `acquisition`(`ei`), `kernel`(`matern52`), `xi`(0.01). `lsq` 옵션: `fd_step_rel`(0.01), `max_iter`, `ftol`.
@@ -377,6 +379,9 @@ class MaterialModel(Protocol):
     def capabilities(self) -> MaterialCapabilities: ...
     def initial_guess(self, hints: Mapping[str, float]) -> Mapping[str, float]: ...
     def describe(self, theta_local: Mapping[str, float]) -> Mapping[str, Any]: ...  # 결과 메타(경화식·외삽)
+    def resolved_options(self) -> Mapping[str, Any]: ...   # (1.2) 실제 적용 옵션(자동 결정값 포함, 예: max_strain, smoothing_weight). initial_guess 이후 호출
+    def regularization_residuals(self, theta_local: Mapping[str, float]) -> np.ndarray: ...
+        # (1.2) 최적화 목적에만 더할 정칙화 잔차(testspec.md §8.3). 정칙화가 없거나 weight=0이면 빈 배열
 ```
 
 (1.1) 엔진 호출 순서: `__init__(options)` → `bind(reference)` → `initial_guess(hints)` → `param_space()` → `to_neutral(θ)`… `param_space()`의 기본 범위·initial은 `bind`·`initial_guess`에서 받은 값으로 정해지므로 이 순서를 지킨다.
@@ -407,6 +412,8 @@ class MaterialModel(Protocol):
 | | `node_spacing` | `geometric` | `geometric`\|`linear`\|`explicit` |
 | | `strain_nodes` | — | `explicit`일 때 εp 리스트(0으로 시작, 엄격 증가) |
 | | `first_node_strain` | `material.mat024_table.first_node_strain`(=0.002) | (1.1) `geometric` 배치의 첫 비영(非零) 노드 εp. 이후 노드는 `max_strain`까지 등비 |
+| | `smoothing_weight` | `material.mat024_table.smoothing_weight`(=0.01) | (1.2) 인접 기울기 정칙화 가중(testspec.md §8.3). 0이면 끔 |
+| | `max_strain_auto` | 엔진이 설정(요청·레지스트리 기본에 `max_strain`이 없을 때 true) | (1.2 문서화) true면 `initial_guess`에서 max_strain = min(max_strain, eps_p_max0 + sigma_y0/E0, 하한 2·first_node_strain)로 줄인다. **실제 적용 max_strain은 `resolved_options()`에 기록** |
 | | `max_strain` | 0.2 | 마지막 노드 εp |
 
 ### 4.4 GeometryMesher
@@ -615,6 +622,7 @@ class RateInfo:
 | M7 | `mat024_coeff`: Swift/Voce 해석식 값과 테이블 점 일치 | 상대오차 ≤1e-9 |
 | M8 | `mat024_table`: 임의 θ에서 단조성(변수 정의로 보장) | 위반 0 |
 | M9 | (1.1) 호출 순서 `bind → initial_guess → param_space`에서 initial이 경계 안, 순서를 지키면 결정적 | 통과 |
+| M10 | (1.2) `resolved_options()`가 `max_strain`(auto 적용값)·`smoothing_weight`를 포함, `regularization_residuals`: 선형 테이블 → 0 벡터, weight=0 → 빈 배열, 길이 m−1 | 통과 |
 
 ### 5.4 GeometryMesher
 
@@ -675,3 +683,6 @@ class RateInfo:
 | 1.0 → 1.1 | 2026-11-08 | `mat024_table.first_node_strain`(0.002), 계수 비유일 주의(§4.3) |
 | 1.0 → 1.1 | 2026-11-08 | `MESH_QUALITY_LOW` 경고(§4.4), G12 |
 | 1.0 → 1.1 | 2026-11-08 | TestSpec `load_mode` 클래스 속성(§4.5), T10, 계약 O9 |
+| 1.1 → 1.2 | 2026-11-09 | R8·§4.1에 joint 단계(예산 포함·예약, 최적화기 lsq) |
+| 1.1 → 1.2 | 2026-11-09 | 정칙화 목적 규약(`EvalOutcome.J` = J + J_reg, `J_data`·`J_reg` 구성요소) |
+| 1.1 → 1.2 | 2026-11-09 | MaterialModel `resolved_options()`·`regularization_residuals()`, 옵션 `smoothing_weight`·`max_strain_auto` 문서화, 계약 M10 |

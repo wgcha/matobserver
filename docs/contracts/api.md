@@ -1,4 +1,4 @@
-schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
+schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
 
 # API 계약 (REST)
 
@@ -16,7 +16,7 @@ matobserver의 외부 계약. 소비자는 MatNexus(서비스 토큰)와 관리�
 | 시각 | ISO 8601 UTC(`2026-11-08T03:12:00Z`) |
 | 필드 이름 | snake_case. 응답에 모르는 필드가 있으면 클라이언트는 무시해야 한다 |
 | 요청 필드 | 엄격: 정의되지 않은 필드는 400 `SCHEMA_INVALID` |
-| `schema_version` | 요청 본문(JSON)에 필수, 모든 응답 본문에 포함. 형식 `"MAJOR.MINOR"` (현재 `"1.1"`; `"1.0"` 요청도 수용) |
+| `schema_version` | 요청 본문(JSON)에 필수, 모든 응답 본문에 포함. 형식 `"MAJOR.MINOR"` (현재 `"1.2"`; `"1.0"`·`"1.1"` 요청도 수용) |
 | 페이지 | 목록은 `limit`(기본 `api.page_default_limit`=50, 최대 `api.page_max_limit`=500), `offset`(0부터). 응답 `{items, total, limit, offset}` (MatNexus `Page` 형과 같은 모양) |
 | 경로 비노출 | 어떤 응답에도 서버 파일 경로를 넣지 않는다. 파일은 `file_id`(입력)·`artifact_id`(출력)로만 다룬다 |
 
@@ -276,7 +276,7 @@ multipart 필드:
 | --- | --- | --- |
 | `iter` | int | 완료된 해석 평가 수(전 단계 누적, plan의 `iter`) |
 | `best_J` | number \| null | 현재 단계까지 최소 목적함수([testspec.md §8](testspec.md)) |
-| `progress.stage` | `"preprocess"` \| `"elastic"` \| `"plastic"` \| `"diagnostics"` \| `"finalize"` \| `"explicit_check"` | |
+| `progress.stage` | `"preprocess"` \| `"elastic"` \| `"plastic"` \| `"joint"`(1.2) \| `"diagnostics"` \| `"finalize"` \| `"explicit_check"` | |
 | `error` | `{code, message}` \| null | `failed`일 때만. 코드는 §7.3 |
 
 ### 4.10 E6 `GET /v1/calibrations/{job_id}/result`
@@ -290,7 +290,7 @@ multipart 필드:
 | 필드 | 타입 | 단위 | 설명 |
 | --- | --- | --- | --- |
 | `eval_index` | int | — | 0부터, 잡 내 고유 |
-| `stage` | `"elastic"` \| `"plastic"` \| `"diagnostics"` \| `"roundtrip"` \| `"explicit_check"` | — | explicit_check 평가는 예산 밖 |
+| `stage` | `"elastic"` \| `"plastic"` \| `"joint"`(1.2, 예산 포함) \| `"diagnostics"` \| `"roundtrip"` \| `"explicit_check"` | — | explicit_check 평가는 예산 밖 |
 | `theta` | object `{"{slot}.{param}" \| "_test.{test_key}.{param}": number}` | SI | 이 평가의 전체 θ(고정값 제외). 재료·비재료 이름 공간은 [plugins.md §3](plugins.md) R1·R9 |
 | `J` | number \| null | 1 | 결합 목적함수. 실패 시 페널티 값 |
 | `J_components` | object | 1 | `{test_key: {response_key: {elastic, plastic, shortfall, scalar}}}` |
@@ -326,7 +326,7 @@ Backend 취소 처리 규칙(1.1): 엔진은 `CancelToken`을 확인하면 예�
 | `failed` | 예 | §7.3 실행 오류. 해석 개별 실패는 페널티로 처리하고 잡을 실패시키지 않는다 |
 | `cancelled` | 예 | 취소 완료 |
 
-- `phase`(running 하위 표시, 상태 아님): `preprocess` → `elastic` → `plastic`(탄성 전용 잡은 생략) → `diagnostics` → `finalize`(결과 테이블 확정·왕복 검사) → `explicit_check`(옵션, 왕복 검사 이후) → 결과 저장. 상태 enum은 plan 그대로 5개로 고정하고 세부는 `phase`로만 늘린다.
+- `phase`(running 하위 표시, 상태 아님): `preprocess` → `elastic` → `plastic`(탄성 전용 잡은 생략) → `joint`(1.2, 공동 재정밀화, testspec.md §8.2) → `diagnostics` → `finalize`(결과 테이블 확정·왕복 검사) → `explicit_check`(옵션, 왕복 검사 이후) → 결과 저장. 상태 enum은 plan 그대로 5개로 고정하고 세부는 `phase`로만 늘린다.
 - 워커 재시작 시 `running`으로 남은 잡은 `failed`(`WORKER_LOST`)로 바꾼다. 재개(restore)는 1차 범위 밖이며 최적화기 `state()/restore()` 계약으로 확장 지점만 둔다.
 
 ## 6. artifact 규칙
@@ -501,3 +501,4 @@ verifying ──(검증 PASS)──→ active ──(retire)──→ retired
 | --- | --- | --- |
 | 1.0 → 1.1 | 2026-11-08 | `optimizer` 기본을 `engine.stages.plastic.optimizer`(=lsq)로, `elastic_optimizer` 기본 키를 `engine.stages.elastic.optimizer`로(§4.2) |
 | 1.0 → 1.1 | 2026-11-08 | 취소 처리 규칙과 `CalibrationCancelled` 연계(§4.12) |
+| 1.1 → 1.2 | 2026-11-09 | `progress.stage`·history `stage`·`phase`에 `joint` 추가(공동 재정밀화) |

@@ -1,4 +1,4 @@
-schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
+schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
 
 # 모듈 경계·구현 소유 계약
 
@@ -241,8 +241,8 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | O-1 | 계약 테스트 O1–O9, M1–M9, T1–T10, `surrogate_beam`의 S1–S5·S9·S11(`single_element_uniaxial`, 해석적) | 통과 |
 | O-2 | 정렬 8단계 단위 테스트: 각 단계 수치 규칙(토우·파손 절단·격자 점 수·출력 간격·범위 부족) | testspec.md §5 값과 일치 |
 | O-3 | 컴플라이언스 보정식(엔진 정렬 1단계 c에서만 1회 적용, map_run 경로와 합쳐도 1회) | 합성 곡선 δ_xhead = δ_spec + C·F 에서 복원한 δ의 최대 절대오차 ≤ 1e-12 × (δ_spec 범위). 이중 적용 시 오차가 C·F 크기로 나타나 실패 |
-| O-4 | **G2 가상 역식별(모드 A 탄성)**: `surrogate_beam`으로 만든 곡선(노이즈 0.5%)에서 E 복원 | 상대오차 ≤1% |
-| O-5 | **G2 가상 역식별(탄소성)**: 알려진 Swift 계수로 만든 곡선에서 `mat024_coeff` 계수 복원 / `mat024_table`로 테이블 복원 | 노이즈 0%: F-δ J ≤ 0.01. 노이즈 있을 때: J ≤ 1.2 × J(참값 파라미터로 계산한 J, 노이즈 바닥값). 공통: 테이블 응력 최대 상대오차 ≤3%(유효 범위 내), `mat024_coeff`·`mat024_table` 둘 다(1.1 보완: 노이즈 시 J 0.01은 구조적으로 도달 불가 — Verifier G2) |
+| O-4 | **G2 가상 역식별(모드 A 탄성)**: `surrogate_beam`으로 만든 곡선에서 E 복원. 노이즈 모델·시드는 아래 주 | 노이즈 0%: 상대오차 ≤1%(개별). 노이즈 0.5%(1.2 분포 기준): 시드 13개 전부 실행, E 상대오차 **중앙값 ≤0.5%, 최대 ≤1.5%** |
+| O-5 | **G2 가상 역식별(탄소성)**: 알려진 Swift 계수로 만든 곡선에서 `mat024_coeff` 계수 복원 / `mat024_table`로 테이블 복원 | 노이즈 0%: F-δ J ≤ 0.01. 노이즈 있을 때: J ≤ 1.2 × J(참값 파라미터로 계산한 J, 노이즈 바닥값). 공통: 테이블 응력 최대 상대오차 ≤3%(유효 범위 내), `mat024_coeff`·`mat024_table` 둘 다(1.1 보완: 노이즈 시 J 0.01은 구조적으로 도달 불가 — Verifier G2) 1.2 분포 기준(노이즈 0.5%): 시드 13개 전부, 테이블 노드 응력 상대오차(유효 범위 내 노드별 최대) **중앙값 ≤3%, 최대 ≤5%**, J/J(참값) ≤1.2 **전 시드**. 노이즈 0%는 위 개별 기준 유지 |
 | O-6 | 모드 B 탄성: 2슬롯 층상, 서로 다른 `stack_axis` 시험 2개 동시 피팅 | 두 E 각각 ≤2% |
 | O-7 | 식별성: 단일 시험 + 2슬롯 → 사전 점검 `IDENTIFIABILITY_UNDERDETERMINED`; 상관 높은 테이블 노드 → `HIGH_CORRELATION` | 판정 일치 |
 | O-8 | 재현성: 같은 `CalibrationSpec`·seed 2회 | 결과 JSON(시각 제외) 동일, `input_hash` 동일 |
@@ -257,6 +257,10 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | O-17 | (1.1) 결과 조립 시 `card_lsdyna`를 `render_card`로 생성(최적점 카드 복사 금지), `card_format=None`이면 생략 | 통과 |
 | O-18 | (1.1) elastic 예산 상한 ceil(0.3·N), 정체 k·(d+1), MaterialModel 호출 순서, `load_mode` 수집, explicit 검사 run 평균 | 일치 |
 | O-19 | (1.1) 옵션 우선순위 spec → job_options → config, `CalibrationCancelled` 발생 | 일치 |
+| O-20 | (1.2) joint 단계: 예산 포함·예약, E 범위 ±`e_bound_rel`, 채택 규칙, 사후 진단이 최종 채택 단계 기준, `e_by_stage` 기록 | 일치 |
+| O-21 | (1.2) 정칙화: J(데이터)·J_reg 분리 기록, 최적화 목적에만 J_reg, 해석된 옵션(`max_strain` auto·`smoothing_weight`)이 결과·`input_hash`에 반영 | 일치 |
+
+주(G2 노이즈, 1.2): 노이즈 모델 = 가산 정규 잡음 F_noisy(x) = F_true(x) + N(0, σ²), σ = 0.005·max\|F_true\| (곡선마다 독립, 원 샘플점마다). 시드 고정 목록 `[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]`(numpy `default_rng(seed)`), 시드는 잡음 생성에만 쓰고 최적화 seed는 잡 기본값. 시드 추가는 허용, 판정은 이 13개 포함 전부.
 
 ### 5.4 Impl-Backend
 
@@ -299,14 +303,14 @@ def verify_recipe(recipe: ResolvedRecipe, services: EngineServices, strict: bool
 | `solver.lsdyna` | `batch_command`(인자 템플릿 리스트, 예 `["{script}", "-i", "{main}", "-n", "{ncpu}"]`), `script`, `mode`(smp\|mpp), `ncpu`(기본 4), `precision`, `termination_patterns`, `license_error_patterns`, `version_pattern` | plugins.md §4.2 |
 | `mesh` | `max_elements`, `min_scaled_jacobian`, `max_aspect_ratio`, `volume_rel_tol_parametric`, `volume_rel_tol_stp`, `gmsh_threads`(1), `jig.rigid_E_pa`(2.1e11), `jig.rigid_poisson`(0.3), `jig.rigid_density_kg_m3`(7850) | plugins.md §5.4, 이 문서 §2 |
 | `geometry` | `layer_sum_rel_tol` | api.md §4.4 |
-| `engine` | `default_solver`, `default_plasticity_mode`, `default_seed`, `stages.elastic.optimizer`(lsq), `stages.plastic.optimizer`(lsq, 1.1), (1.0 별칭) `elastic_stage.optimizer`·`plastic_stage.optimizer`, `stagnation.{k,rel_tol}`, `abort_if_initial_all_failed` | plugins.md §4.1 |
+| `engine` | `default_solver`, `default_plasticity_mode`, `default_seed`, `stages.elastic.optimizer`(lsq), `stages.plastic.optimizer`(lsq, 1.1), `stages.joint.enabled`(true, 1.2), `stages.joint.optimizer`(lsq), `stages.joint.max_evaluations`(null → ceil(0.2·N)), `stages.joint.e_bound_rel`(0.05), (1.0 별칭) `elastic_stage.optimizer`·`plastic_stage.optimizer`, `stagnation.{k,rel_tol}`, `abort_if_initial_all_failed` | plugins.md §4.1 |
 | `budget` | `default_max_evaluations`, `max_evaluations_limit`, `default_max_wall_time_s` | api.md §4.6 |
 | `alignment` | testspec.md §5 표의 키 전부 | testspec.md §5 |
 | `objective` | `region_weights`, `shortfall_penalty`, `failed_run_J`, `scalar_floor`, (n차 예약) `similarity` | testspec.md §8 |
 | `cases` | `dimension_merge_rel_tol` | testspec.md §9.1 |
 | `identifiability` | `precheck_mode`, `min_points_per_param`, `post_fit`, `fd_step_rel`, `max_extra_evals`, `corr_threshold`, `min_sensitivity`, `max_condition` | testspec.md §9 |
 | `testspec.bending` | `prefer_deflection`(기본 false — 크로스헤드 기본, 결정 2026-11-08), `min_span_ratio`, `beam_theory_span_ratio`, `overtravel_ratio`, `min_eps_p0`, `rate_from_time_channel`(true) | testspec.md §10 |
-| `material` | `default_density_kg_m3`, `default_E_range_pa`, `default_sigma_y_range_pa`, `mat024.max_strain`, `mat024_coeff.default_law`, `mat024_table.nodes`, `mat024_table.first_node_strain`(0.002, 1.1) | plugins.md §4.3, api.md §4.3 |
+| `material` | `default_density_kg_m3`, `default_E_range_pa`, `default_sigma_y_range_pa`, `mat024.max_strain`, `mat024_coeff.default_law`, `mat024_table.nodes`, `mat024_table.first_node_strain`(0.002, 1.1), `mat024_table.smoothing_weight`(0.01, 1.2) | plugins.md §4.3, api.md §4.3 |
 | `result` | `table_points`, `table_spacing`, `table_first_step`, `extrapolate_to_strain`, `extrapolation_method`, `at_bound_tol` | result.md §2–3 |
 | `uncertainty` | `per_specimen_refit`, `refit_max_evaluations` | result.md §4.4 |
 | `verify` | `roundtrip_enabled`, `roundtrip_tol`, `roundtrip_strain`; `explicit_check.enabled`(false), `explicit_check.elform`(1), `explicit_check.hourglass.ihq`(6), `explicit_check.hourglass.qm`(0.1), `explicit_check.loading_velocity_m_s`(0.5), `explicit_check.max_ke_ratio`(0.05), `explicit_check.max_region_error`(0.05), `explicit_check.max_peak_rel_diff`(0.05), `explicit_check.run_timeout_s`(null) | result.md §4.9·§4.12, testspec.md §8.1 |
@@ -377,3 +381,5 @@ decisions.md·plan.md 확정 사항이 어느 계약에 반영됐는지.
 | 1.0 → 1.1 | 2026-11-08 | `CalibrationSpec.plasticity_mode`·`explicit_check`, `EngineServices.job_options`, 옵션 읽기 우선순위, `CalibrationCancelled`(§4.1) |
 | 1.0 → 1.1 | 2026-11-08 | 설정 키 `engine.stages.*.optimizer`, `material.mat024_table.first_node_strain`(§6) |
 | 1.0 → 1.1 | 2026-11-08 | 완료 테스트 M-9, S-12, O-16–O-19, B-12–B-13, 계약 테스트 범위 갱신(§5) |
+| 1.1 → 1.2 | 2026-11-09 | G2 노이즈 분포 기준(O-4·O-5), 노이즈 모델·시드 목록 1–13 |
+| 1.1 → 1.2 | 2026-11-09 | 설정 `engine.stages.joint.*`, `material.mat024_table.smoothing_weight`(§6), 완료 테스트 O-20·O-21 |

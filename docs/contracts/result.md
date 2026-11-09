@@ -1,4 +1,4 @@
-schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
+schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
 
 # 결과 스키마 계약
 
@@ -38,7 +38,8 @@ schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
   "slot": "body",
   "role": "identify",
   "member_position": null,
-  "material_model": {"name": "mat024_table", "version": "1.0.0", "options": {"table_nodes": 8, "max_strain": 0.2}},
+  "material_model": {"name": "mat024_table", "version": "1.0.0", "options": {"table_nodes": 8, "max_strain": 0.083, "max_strain_auto": true, "first_node_strain": 0.002, "smoothing_weight": 0.01}},
+  "regularization": {"kind": "adjacent_slope", "weight": 0.01, "J_reg": 0.0007},
   "card_blocks": {
     "elastic": {"youngs_modulus": 2.31e9, "poisson_ratio": 0.38, "density": 1200.0},
     "table": [{"plastic_strain": 0.0, "true_stress": 4.10e7}, {"plastic_strain": 0.005, "true_stress": 4.52e7}],
@@ -61,7 +62,8 @@ schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
 | `slot` | string | — | 매니페스트·요청 슬롯 이름 |
 | `role` | `identify` \| `fixed` | — | |
 | `member_position` | int \| null | — | 요청값(ADR 0026 대응) |
-| `material_model` | `{name, version, options}` | — | 레지스트리 이름·버전·병합 옵션 |
+| `material_model` | `{name, version, options}` | — | 레지스트리 이름·버전·**해석된 옵션**(1.2: `resolved_options()` — 자동 결정 max_strain·smoothing_weight 등 실제 적용값). `input_hash` 계산에 포함 |
+| `regularization` | `{kind, weight, J_reg}` \| null | — | (1.2) 정칙화 종류(`adjacent_slope`)·적용 가중·최종 θ의 J_reg. 정칙화 없는 모델이면 null. `residuals.J`에는 포함되지 않음 |
 | `card_blocks` | object | SI | **솔버 중립 1차 산출물**. MatNexus 카드 블록 어휘(§3) |
 | `identified_params` | `{param: ParamResult}` | SI | identify 슬롯의 식별 변수. fixed 슬롯은 `{}` |
 | `fixed_params` | `{name: {value, source}}` | SI | 식별하지 않은 입력값(ν, ρ, `fixed_value`로 고정한 변수). `source`: `request.reference` \| `request.params` \| `config.default` |
@@ -120,7 +122,7 @@ MatNexus `elastic` 블록은 온도별 행을 가질 수 있으나 이 SW는 온
 | `termination` | object | §4.8 |
 | `roundtrip` | object | §4.9 |
 | `warnings` | `Warning[]` | §4.10 |
-| `traceability` | object | §4.11 |
+| `traceability` | object | §4.11 (`input_hash`는 슬롯 해석된 옵션을 포함, 1.2) |
 | `explicit_check` | object | §4.12 (옵션 검사, 꺼져 있으면 `{"enabled": false}`) |
 | `rate` | object | §4.13 기준 변형률속도·속도 의존 여부 |
 
@@ -228,7 +230,7 @@ MatNexus `elastic` 블록은 온도별 행을 가질 수 있으나 이 SW는 온
 
 ### 4.8 `termination`
 
-`{reason, evaluations, evaluations_failed, wall_time_s, per_stage: {elastic: {reason, evaluations, best_eval_index}, plastic: {...}}}`. `reason`: `budget` | `stagnation` | `converged` | `wall_time` (wall_time이면 경고 `WALL_TIME_REACHED`).
+`{reason, evaluations, evaluations_failed, wall_time_s, per_stage: {elastic: {reason, evaluations, best_eval_index}, plastic: {...}, joint: {..., accepted: bool}}, final_stage, e_by_stage}`. (1.2) `final_stage`: `elastic`\|`plastic`\|`joint`. `e_by_stage`: `[{slot, elastic: E₁, plastic: E(=E₁), joint: E₃\|null, rel_change_joint: (E₃−E₁)/E₁}]` (Pa, 1). `reason`: `budget` | `stagnation` | `converged` | `wall_time` (wall_time이면 경고 `WALL_TIME_REACHED`).
 
 ### 4.9 `roundtrip` — 솔버 중립 테이블 왕복 검사
 
@@ -424,3 +426,6 @@ LS-DYNA 카드(.k)는 `card_blocks`에서 파생한 2차 산출물이다(artifac
 | 1.0 → 1.1 | 2026-11-08 | `vs_experiment` run 평균(§4.12) |
 | 1.0 → 1.1 | 2026-11-08 | 경고 `MESH_QUALITY_LOW`(§4.10) |
 | 1.0 → 1.1 | 2026-11-08 | `card_lsdyna`를 결과 NeutralMaterial에서 `render_card`로 재렌더링(§5·§6) |
+| 1.1 → 1.2 | 2026-11-09 | `material_model.options` = 해석된 옵션(자동 max_strain·smoothing_weight), `input_hash` 반영(§2·§4.11) |
+| 1.1 → 1.2 | 2026-11-09 | 슬롯 `regularization` 필드(§2) |
+| 1.1 → 1.2 | 2026-11-09 | `termination.final_stage`·`per_stage.joint`·`e_by_stage`(§4.8) |

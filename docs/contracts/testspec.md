@@ -1,4 +1,4 @@
-schema_version: 1.1 · 상태: 승인(G1, MINOR 1.1) · 2026-11-08
+schema_version: 1.2 · 상태: 승인(G1, MINOR 1.2) · 2026-11-09
 
 # TestSpec·응답 정의·정렬 규칙 계약
 
@@ -159,6 +159,8 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | --- | --- | --- |
 | 탄성 단계 | w_plastic = 0 으로 계산(Ω1만). **해석은 탄성 전용 카드로 한다**: identify 슬롯의 `NeutralMaterial`에서 `table`을 제거해(MAT_001 등가) 넘긴다 — σy 초기값이 탄성 구간 곡선을 왜곡해 E가 편향되는 것을 막기 위함. fixed 슬롯은 기준 카드 그대로 | — |
 | 소성 단계 | 위 식 그대로(E 고정) | — |
+| 공동 재정밀화 단계(1.2) | 위 식 그대로, E와 소성 식별 변수를 함께(§8.2) | `engine.stages.joint.*` |
+| 정칙화(1.2) | **J는 데이터 잔차만이다(정의 불변)**. 테이블 정칙화 항 J_reg(§8.3)는 최적화기에 넘기는 목적값(`EvalOutcome.J` = J + J_reg, 잔차 벡터에 정칙화 잔차 추가)에만 더한다. history·결과의 `J`, `best_J`, `residuals`는 J_reg를 포함하지 않으며 J_reg는 `J_components.regularization`에 따로 기록 | `material.mat024_table.smoothing_weight` |
 | 해석 실패 | 곡선을 못 얻으면 J_{r,i} = `objective.failed_run_J`. 부분 곡선이 있으면 위 식 + 범위 부족 페널티 | `objective.failed_run_J`(10.0) |
 | 시간 초과 | 실패와 같음(부분 곡선 사용) | 요청 `budget.run_timeout_s`, 기본 `solver.run_timeout_s` |
 | 케이스 공유 | 같은 케이스(§9.1)의 run들은 하나의 해석 곡선과 각자 비교 | — |
@@ -179,6 +181,34 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 | 실패 | 비정상 종료·시간 초과 → 경고 `EXPLICIT_CHECK_FAILED`(부분 곡선이 있으면 지표 + shortfall 기록). 실행 불가(어댑터 `supports_overrides=False`, 질량 스케일링 등) → `EXPLICIT_CHECK_SKIPPED` | — |
 | 예산 | `budget.max_evaluations` 밖. history `stage=explicit_check` | — |
 
+### 8.2 공동 재정밀화 단계 `joint` (1.2)
+
+| 항목 | 규칙 | 설정 키(기본) |
+| --- | --- | --- |
+| 실행 조건 | plastic 단계가 있고 `engine.stages.joint.enabled`(true). 탄성 전용 잡은 생략 | `engine.stages.joint.enabled` |
+| 위치 | `plastic` 직후, `diagnostics` 전 | — |
+| 변수 | identify 슬롯의 E + plastic 단계 식별 변수 전부(비재료 변수 포함). 카드는 탄소성 전체(탄성 전용 카드 아님) | — |
+| 범위 | E: [E₁·(1 − r), E₁·(1 + r)], E₁ = elastic 단계 추정치, r = `e_bound_rel`(원 범위와 교집합). 소성 변수: 원 범위 그대로 | `engine.stages.joint.e_bound_rel`(0.05) |
+| 초기점 | plastic 단계 최적 θ(E = E₁) | — |
+| 최적화기 | 별도 인스턴스, 정칙화 포함 목적(§8.3) | `engine.stages.joint.optimizer`(lsq) |
+| 예산 | **`budget.max_evaluations`에 포함**. 상한 = min(`max_evaluations`(null이면 ceil(0.2·N)), 남은 평가). 잡 시작 시 joint 몫을 예약하므로 plastic 상한 = N − elastic 사용 수 − joint 예약 | `engine.stages.joint.max_evaluations`(null → ceil(0.2·N)) |
+| 종료 | 다른 단계와 같은 정체·예산·시간 규칙 | — |
+| 채택 | joint 최적 J ≤ plastic 최적 J이면 joint 결과를 최종으로, 아니면 plastic 결과 유지(`accepted=false`) | — |
+| 이후 | 식별성 사후 진단(§9.3)·결과·불확도는 **최종 채택 단계(joint 또는 plastic) 결과 기준**. 단계별 E 변화는 result.md §4.8 `e_by_stage` | — |
+
+### 8.3 테이블 정칙화 (1.2)
+
+`mat024_table` 슬롯마다, 노드 기울기 s_i = (σ_{i+1} − σ_i)/(εp_{i+1} − εp_i), i = 0..m−1, 기준 기울기 s_ref = σ_y / max_strain(적용값):
+
+```
+r_reg,i = √w · (s_{i+1} − s_i) / s_ref,   i = 0..m−2        (kind = adjacent_slope)
+J_reg   = Σ_slots Σ_i r_reg,i²
+```
+
+- w = `material.mat024_table.smoothing_weight`(기본 0.01, 0이면 끔). 슬롯 `options.smoothing_weight`로 덮을 수 있다.
+- 계산 주체: MaterialModel `regularization_residuals(θ_local)`([plugins.md §4.3](plugins.md)). 엔진은 plastic·joint 단계 목적에만 더하고 elastic 단계에는 더하지 않는다.
+- 적용값은 해석된 옵션(`material_model.options.smoothing_weight`)에 기록되어 `input_hash`(설정·요청 경유)에 반영되고, 결과 `regularization`([result.md §2](result.md))에 남는다.
+
 ## 9. 케이스·식별성
 
 ### 9.1 시뮬레이션 케이스
@@ -196,7 +226,7 @@ J_{r,i} = Σ_k w_k · e_{r,i,k}  +  λ_s · s_{r}                               
 
 | 항목 | 규칙 | 설정 키(기본) |
 | --- | --- | --- |
-| 실행 | `identifiability.post_fit`(true)일 때, 각 단계 최종 θ*에서 식별 변수마다 전진 차분 1회(상대 스텝 h; log 변수는 곱셈 스텝). 평가는 history `stage=diagnostics`, `budget.max_evaluations`에 넣지 않음 | `post_fit`(true), `fd_step_rel` h(0.02), `max_extra_evals`(30; 초과 시 생략 + 경고 `DIAGNOSTICS_SKIPPED`) |
+| 실행 | `identifiability.post_fit`(true)일 때, 각 단계 최종 θ*(1.2: plastic 단계 진단은 joint가 채택되면 **joint 최종 θ*** 기준, 변수는 E 포함 joint 변수 전부)에서 식별 변수마다 전진 차분 1회(상대 스텝 h; log 변수는 곱셈 스텝). 평가는 history `stage=diagnostics`, `budget.max_evaluations`에 넣지 않음 | `post_fit`(true), `fd_step_rel` h(0.02), `max_extra_evals`(30; 초과 시 생략 + 경고 `DIAGNOSTICS_SKIPPED`) |
 | 잔차 벡터 | 모든 run·응답·구간 격자점의 √w_k·(F_sim−F_exp)/‖F_exp‖_{Ω_k} 연결 | — |
 | 민감도 | 상대 야코비안 S_{gj} = ∂r_g/∂ln θ_j. 정규화 민감도 ‖S_j‖₂ | — |
 | 상관 | cov = σ²(SᵀS)⁻¹, σ² = ‖r‖²/(n_res − n_p). 상관행렬 = cov_{ij}/√(cov_ii cov_jj). 상대 표준편차 = √cov_jj. **이 상대 표준편차는 하한 추정이다**: 격자점 잔차를 독립으로 가정하지만 같은 곡선의 이웃 격자점은 강하게 상관돼 실제 자유도가 n_res보다 훨씬 작다. 결과에 `relative_stdev_is_lower_bound: true`로 표기. 상관행렬·민감도·조건수(σ²와 무관)는 그대로 유효 | — |
@@ -310,3 +340,5 @@ n차 고속 TestSpec은 같은 `reference_strain_rate()`로 시험별 ε̇를 �
 | 1.0 → 1.1 | 2026-11-08 | `alignment.elastic_dev_tol` 0.05 → 0.01(§5.1), T-1·T-7 갱신 |
 | 1.0 → 1.1 | 2026-11-08 | explicit 검사 `vs_experiment` run 산술평균(§8.1) |
 | 1.0 → 1.1 | 2026-11-08 | 계수 비유일 시 테이블 기준 판정(§9.3) |
+| 1.1 → 1.2 | 2026-11-09 | §8 정칙화는 최적화 목적에만(J 정의 불변), §8.2 공동 재정밀화 단계, §8.3 인접 기울기 정칙화 |
+| 1.1 → 1.2 | 2026-11-09 | §9.3 사후 진단은 최종 채택 단계(joint) 기준 |
