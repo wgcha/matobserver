@@ -174,6 +174,13 @@ def main() -> int:
         return 0
     mode = mode_of(d)
     action = beh.get(mode, "normal")
+    if action == "hang_child":  # 자식 프로세스(LS-DYNA 모사)를 띄우고 멈춘다 — 트리 종료 확인용
+        import subprocess
+
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+        (d / "fake_child.pid").write_text(str(child.pid))
+        time.sleep(600)
+        return 0
     if action == "hang":
         (d / "d3hsp").write_text(HEADER + "running...\n")
         time.sleep(600)

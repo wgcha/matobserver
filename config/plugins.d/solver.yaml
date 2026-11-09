@@ -1,6 +1,21 @@
 # 소유자: Impl-Solver — solver 플러그인 `lsdyna` 항목만 추가한다.
 # 형식: docs/contracts/plugins.md §2. (surrogate_beam은 optim.yaml, Impl-Optim 소유)
 # 환경별 값(배치 스크립트 경로·인자·코어 수)은 여기 두지 않는다 → 설정 solver.lsdyna.* (module-boundaries.md §6).
+#
+# solver.lsdyna.batch_command 예 (config/matobserver.yaml 또는 MATOBSERVER__SOLVER__LSDYNA__BATCH_COMMAND):
+#   Linux 셸 스크립트 : ["{script}", "-i", "{main}", "-n", "{ncpu}"]            (기본값)
+#   Windows .bat/.cmd : ["cmd", "/c", "{script}", "-i", "{main}", "-n", "{ncpu}"]
+#     (.bat 은 실행 파일이 아니라 cmd /c 로 감싸야 한다)
+#   치환 키: {script} {main}(절대 경로) {main_name} {workdir} {ncpu} {mode} {precision} {analysis}
+# 인자는 리스트로 넘기므로 공백이 든 경로(예 "C:\Program Files\...")에 따옴표를 붙이지 않는다 —
+# Windows 에서는 subprocess 가 리스트를 명령행으로 만들 때 공백 인자를 자동으로 따옴표로 감싼다
+# (list2cmdline). 직접 따옴표를 넣으면 이중 인용이 된다. 단, .bat 내부에서 %1 등을 다시 쓸 때는
+# 스크립트 쪽에서 "%~1" 처럼 받아야 한다.
+# 주의(cmd /c 따옴표 규칙): {script} 경로와 다른 인자({main} 등)가 모두 공백을 포함하면 따옴표가 3개 이상이 되어
+# cmd 가 맨 앞·맨 뒤 따옴표를 지워 명령이 깨진다. 배치 스크립트는 공백 없는 경로에 두기를 권장(작업 폴더
+# paths.work_dir 은 공백이 있어도 됨).
+# 시간 초과·취소 시 배치 스크립트와 자식(LS-DYNA) 트리를 함께 끝낸다:
+#   POSIX = 새 세션 + 프로세스 그룹 kill, Windows = CREATE_NEW_PROCESS_GROUP + taskkill /T /F.
 schema_version: "1.0"
 plugins:
   - type: solver

@@ -96,9 +96,15 @@ def test_s10_cleanup_keep_levels_and_inside_only(tmp_path, keep, expected):
     _populate(prep.workdir / "explicit")
     outside = tmp_path / "outside_d3dump01"
     outside.write_text("keep me")
-    (prep.workdir / "link_d3dump").symlink_to(outside)
+    try:
+        (prep.workdir / "link_d3dump").symlink_to(outside)
+        has_link = True
+    except (OSError, NotImplementedError):  # Windows: 심볼릭 링크 권한 없음
+        has_link = False
     a.cleanup(prep, keep)
-    assert outside.read_text() == "keep me" and (prep.workdir / "link_d3dump").is_symlink()
+    assert outside.read_text() == "keep me"
+    if has_link:
+        assert (prep.workdir / "link_d3dump").is_symlink()
     for d in (prep.workdir, prep.workdir / "explicit"):
         left = {p.name for p in d.iterdir() if p.is_file() and not p.is_symlink()}
         assert left == (set(left) if expected is None else expected)

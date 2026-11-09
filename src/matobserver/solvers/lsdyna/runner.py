@@ -86,27 +86,53 @@ def build_command(s: RunnerSettings, main_file: Path, ncpu: int, analysis: str) 
         raise SolverUnavailable(f"solver.lsdyna.batch_command has unknown placeholder {e}") from None
 
 
-def _terminate(proc: subprocess.Popen[Any], grace_s: float) -> None:
-    if proc.poll() is not None:
+#: Windows CREATE_NEW_PROCESS_GROUP (subprocess 상수는 Windows 에만 있다)
+CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+
+
+def popen_kwargs(os_name: str = os.name) -> dict[str, Any]:
+    """프로세스 트리 단위로 끝낼 수 있게 띄우는 옵션. POSIX: 새 세션(=프로세스 그룹), Windows: 새 프로세스 그룹."""
+    if os_name == "nt":
+        return {"creationflags": CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def taskkill_command(pid: int) -> list[str]:
+    """Windows 프로세스 트리 강제 종료 (배치 스크립트 → LS-DYNA 자식까지)."""
+    return ["taskkill", "/T", "/F", "/PID", str(int(pid))]
+
+
+def _terminate(proc: subprocess.Popen[Any], grace_s: float, os_name: str = os.name) -> None:
+    """배치 스크립트와 그 자식(LS-DYNA) 트리를 끝낸다 (시간 초과·취소 공통).
+
+    POSIX: 그룹에 SIGTERM → grace 대기 → 그룹에 SIGKILL(남은 자식까지). Windows: `taskkill /T /F /PID`
+    (실패하면 `Popen.kill()` 폴백 — 이 경우 자식은 남을 수 있다)."""
+    if os_name == "nt":
+        if proc.poll() is None:
+            try:
+                r = subprocess.run(taskkill_command(proc.pid), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   timeout=max(grace_s, 1.0) + 10.0)
+                ok = r.returncode == 0
+            except (OSError, subprocess.SubprocessError):
+                ok = False
+            if not ok and proc.poll() is None:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+        proc.wait()
         return
     try:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGTERM)
-        else:  # pragma: no cover - Windows
-            proc.terminate()
+        os.killpg(proc.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return
+        pass
     try:
         proc.wait(timeout=max(grace_s, 0.0))
-        return
     except subprocess.TimeoutExpired:
         pass
     try:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGKILL)
-        else:  # pragma: no cover
-            proc.kill()
-    except ProcessLookupError:
+        os.killpg(proc.pid, signal.SIGKILL)  # TERM 을 무시한 자식까지
+    except (ProcessLookupError, PermissionError):
         pass
     proc.wait()
 
@@ -119,8 +145,7 @@ def _attempt(s: RunnerSettings, cmd: list[str], rundir: Path, timeout_s: float,
     env.update(s.env)
     with open(rundir / RUN_LOG, "wb") as log:
         try:
-            proc = subprocess.Popen(cmd, cwd=rundir, stdout=log, stderr=subprocess.STDOUT, env=env,
-                                    start_new_session=(os.name == "posix"))
+            proc = subprocess.Popen(cmd, cwd=rundir, stdout=log, stderr=subprocess.STDOUT, env=env, **popen_kwargs())
         except OSError as e:
             raise SolverUnavailable(f"cannot start batch command {cmd[0]!r}: {e}") from e
         poll = max(min(s.poll_interval_s, 1.0), 0.01)
