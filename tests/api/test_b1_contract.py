@@ -30,7 +30,7 @@ def test_e1_health(env):
     r = env.client.get("/v1/health")
     assert r.status_code == 200
     check(r.json(), {"status": str, "version": str, "schema_version": str})
-    assert r.json()["status"] == "ok" and r.json()["schema_version"] == "1.2"
+    assert r.json()["status"] == "ok" and r.json()["schema_version"] == "1.3"
 
 
 # ---------------------------------------------------------------- E2

@@ -36,15 +36,15 @@ def test_joint_stage_phase_history_and_result_fields(active_env):
         services.progress("diagnostics")
         return dict(RESULT_12)
 
-    jid = e.post_job(calibration_body(schema_version="1.2")).json()["job_id"]
+    jid = e.post_job(calibration_body(schema_version="1.3")).json()["job_id"]
     e.worker(make_hooks(run=run)).run_once()
     assert seen["phase"] == "joint"
     st = e.get(f"/v1/calibrations/{jid}").json()
-    assert st["status"] == "succeeded" and st["schema_version"] == "1.2" and st["iter"] == 3  # joint 평가도 예산에 포함
+    assert st["status"] == "succeeded" and st["schema_version"] == "1.3" and st["iter"] == 3  # joint 평가도 예산에 포함
     hist = e.get(f"/v1/calibrations/{jid}/history").json()
     assert [h["stage"] for h in hist["items"]] == ["elastic", "plastic", "joint"]
     res = e.get(f"/v1/calibrations/{jid}/result").json()
-    assert res["schema_version"] == "1.2"
+    assert res["schema_version"] == "1.3"
     assert res["termination"]["final_stage"] == "joint" and res["termination"]["e_by_stage"][0]["joint"] == 7.1e10
     assert res["termination"]["per_stage"]["joint"]["accepted"] is True
     assert res["regularization"] == RESULT_12["regularization"]

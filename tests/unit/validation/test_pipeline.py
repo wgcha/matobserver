@@ -231,10 +231,10 @@ def test_numbers_must_be_numbers_not_strings_or_bools(active_env):
 
 def test_schema_version_forms(active_env):
     e = active_env
-    for v in ("1.0", "1.1", "1.2"):  # MINOR 하위 호환: 1.0 · 1.1 모두 수용
+    for v in ("1.0", "1.1", "1.2", "1.3"):  # MINOR 하위 호환: 1.0 · 1.1 모두 수용
         validate(e, calibration_body(schema_version=v))
-    assert validate(e, calibration_body(schema_version="1.0")).snapshot["schema_version"] == "1.2"
-    assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="1.3"))
+    assert validate(e, calibration_body(schema_version="1.0")).snapshot["schema_version"] == "1.3"
+    assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="1.4"))
     assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="2.0"))
     assert "SCHEMA_VERSION_UNSUPPORTED" in failed_codes(e, calibration_body(schema_version="0.9"))
     assert "SCHEMA_INVALID" in failed_codes(e, calibration_body(schema_version="one"))

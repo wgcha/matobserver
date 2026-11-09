@@ -28,12 +28,16 @@ from typing import Any, Callable, Mapping, Sequence, TextIO
 
 import httpx
 
-from . import __version__
+from . import CONTRACT_SCHEMA_VERSION, __version__
 from .core.config import Config, load_config
 from .core.errors import ConfigError, RegistryError
 from .core.registry import Registry
 from .recipes.bundle import content_hash
 from .recipes.static_check import check_folder
+from .ops import service as ops_service
+from .ops.doctor import run_doctor
+from .ops.runtime import RUN_MODE_ENV, ServiceLifecycle, setup_file_logging
+from .ops.service import OpsEnv
 from .validation.hooks import EngineHooks
 
 EXIT_OK, EXIT_USAGE, EXIT_STATIC, EXIT_REJECTED, EXIT_CONFLICT, EXIT_COMM = 0, 1, 2, 3, 4, 5
@@ -266,36 +270,50 @@ def _cmd_recipe_retire(args: argparse.Namespace, ctx: _Ctx) -> int:
 
 
 # ---------------------------------------------------------------------- serve / worker
+def _run_mode(args: argparse.Namespace, ctx: _Ctx) -> str:
+    return getattr(args, "run_mode", None) or ctx.env.get(RUN_MODE_ENV) or "process"
+
+
 def _cmd_serve(args: argparse.Namespace, ctx: _Ctx, runner: Callable[..., Any] | None) -> int:
     from .api.app import create_app
+    from .jobs.db import SchemaOutdated, SchemaTooNew
 
     try:
         cfg = _load(args, ctx)
         registry = Registry.from_config(cfg)
-    except (ConfigError, RegistryError) as e:
+        app = create_app(cfg, registry)
+    except (ConfigError, RegistryError, SchemaOutdated, SchemaTooNew) as e:
         ctx.err.write(f"기동 실패: {e}\n")
         return EXIT_USAGE
-    app = create_app(cfg, registry)
     host, port = args.host or cfg.get("api.host"), args.port or cfg.get("api.port")
-    if runner is None:
-        import uvicorn
+    if runner is not None:  # 시험용 주입: PID 파일·로그 파일 없이 실행
+        runner(app, host=host, port=int(port))
+        return EXIT_OK
+    import uvicorn
 
-        runner = uvicorn.run
-    runner(app, host=host, port=int(port))
+    setup_file_logging(cfg, "server")
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=int(port), log_config=None))
+
+    def request_stop() -> None:
+        server.should_exit = True
+
+    with ServiceLifecycle(cfg, "server", _run_mode(args, ctx), request_stop):
+        server.run()
     return EXIT_OK
 
 
 def _cmd_worker(args: argparse.Namespace, ctx: _Ctx, hooks: EngineHooks | None) -> int:
     from .api.context import build_context
+    from .jobs.db import SchemaOutdated, SchemaTooNew
     from .jobs.worker import Worker, WorkerLock
 
     try:
         cfg = _load(args, ctx)
         registry = Registry.from_config(cfg)
-    except (ConfigError, RegistryError) as e:
+        actx = build_context(cfg, registry, hooks=hooks, discover_hooks=hooks is None)
+    except (ConfigError, RegistryError, SchemaOutdated, SchemaTooNew) as e:
         ctx.err.write(f"기동 실패: {e}\n")
         return EXIT_USAGE
-    actx = build_context(cfg, registry, hooks=hooks, discover_hooks=hooks is None)
     lock = WorkerLock(cfg.path("paths.data_dir") / "worker.lock")
     if not lock.acquire():
         ctx.err.write("다른 워커가 이미 실행 중입니다 (워커는 1개만 둡니다).\n")
@@ -312,10 +330,113 @@ def _cmd_worker(args: argparse.Namespace, ctx: _Ctx, hooks: EngineHooks | None) 
         if threading.current_thread() is threading.main_thread():
             for sig in (signal.SIGINT, signal.SIGTERM):
                 signal.signal(sig, lambda *_: stop.set())
-        worker.run_forever(stop, idle_sleep_s=args.idle_sleep)
+        setup_file_logging(cfg, "worker")
+        with ServiceLifecycle(cfg, "worker", _run_mode(args, ctx), stop.set,
+                              heartbeat=lambda: actx.store.beat_worker(os.getpid()),
+                              heartbeat_s=float(cfg.get("worker.heartbeat_s"))):
+            worker.run_forever(stop, idle_sleep_s=args.idle_sleep)
         return EXIT_OK
     finally:
         lock.release()
+
+
+# ---------------------------------------------------------------------- 운영 명령 (deploy.md §2)
+def _ops_cfg(args: argparse.Namespace, ctx: _Ctx) -> tuple[Config, Path | None] | None:
+    try:
+        cfg = _load(args, ctx)
+    except ConfigError as e:
+        ctx.err.write(f"설정 오류: {e}\n")
+        return None
+    return cfg, cfg.source_path
+
+
+def _emit(ctx: _Ctx, args: argparse.Namespace, report: Mapping[str, Any], table: Callable[[Mapping[str, Any]], str]) -> None:
+    if getattr(args, "json", False):
+        _print_json(ctx, report)
+    else:
+        ctx.out.write(table(report) + "\n")
+
+
+def _flat_table(report: Mapping[str, Any]) -> str:
+    rows: list[tuple[str, str]] = []
+
+    def walk(prefix: str, v: Any) -> None:
+        if isinstance(v, Mapping):
+            for k, x in v.items():
+                walk(f"{prefix}.{k}" if prefix else str(k), x)
+        else:
+            rows.append((prefix, "" if v is None else str(v)))
+
+    walk("", report)
+    return _table(rows, ("항목", "값"))
+
+
+def _cmd_start(args: argparse.Namespace, ctx: _Ctx, env: OpsEnv) -> int:
+    loaded = _ops_cfg(args, ctx)
+    if loaded is None:
+        return EXIT_USAGE
+    code, report = ops_service.start(loaded[0], loaded[1], args.service, args.mode, env)
+    _emit(ctx, args, report, _flat_table)
+    return code
+
+
+def _cmd_stop(args: argparse.Namespace, ctx: _Ctx, env: OpsEnv) -> int:
+    loaded = _ops_cfg(args, ctx)
+    if loaded is None:
+        return EXIT_USAGE
+    code, report = ops_service.stop(loaded[0], args.service, args.timeout, args.force, env)
+    _emit(ctx, args, report, _flat_table)
+    return code
+
+
+def _cmd_status(args: argparse.Namespace, ctx: _Ctx, env: OpsEnv) -> int:
+    loaded = _ops_cfg(args, ctx)
+    if loaded is None:
+        return EXIT_USAGE
+    code, report = ops_service.status(loaded[0], loaded[1], env)
+    _emit(ctx, args, report, _flat_table)
+    return code
+
+
+def _doctor_table(report: Mapping[str, Any]) -> str:
+    rows = [(c["id"], c["name"], c["status"], c["detail"]) for c in report["checks"]]
+    s = report["summary"]
+    return (_table(rows, ("ID", "항목", "상태", "상세"))
+            + f"\n\nOK {s['ok']}  WARN {s['warn']}  FAIL {s['fail']}  SKIP {s['skip']}")
+
+
+def _cmd_doctor(args: argparse.Namespace, ctx: _Ctx, env: OpsEnv) -> int:
+    unknown: list[str] = []
+    cfg: Config | None = None
+    err: str | None = None
+    try:
+        cfg = load_config(args.config, env=ctx.env, unknown=unknown)
+    except ConfigError as e:
+        err = str(e)
+    code, report = run_doctor(cfg, unknown, cfg.source_path if cfg else None, env, load_error=err)
+    _emit(ctx, args, report, _doctor_table)
+    return code
+
+
+def _cmd_db_migrate(args: argparse.Namespace, ctx: _Ctx) -> int:
+    from .jobs.db import SchemaTooNew, migrate
+
+    loaded = _ops_cfg(args, ctx)
+    if loaded is None:
+        return EXIT_USAGE
+    path = loaded[0].path("jobstore.sqlite_path")
+    try:
+        res = migrate(path, backup=not args.no_backup)
+    except SchemaTooNew as e:
+        ctx.err.write(f"{e}\n")
+        return 2
+    except Exception as e:  # noqa: BLE001 - 롤백된 실패
+        ctx.err.write(f"마이그레이션 실패(롤백됨): {type(e).__name__}: {e}\n")
+        return 1
+    report = {"from_version": res.from_version, "to_version": res.to_version, "backup": None if res.backup is None else str(res.backup),
+              "changed": res.from_version != res.to_version}
+    _emit(ctx, args, report, _flat_table)
+    return EXIT_OK
 
 
 # ---------------------------------------------------------------------- 진입점
@@ -330,21 +451,46 @@ class _Parser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     p = _Parser(prog="matobserver", description="MatNexus용 재료 역공학(FEMU) 엔진", allow_abbrev=False)
-    p.add_argument("--version", action="version", version=f"matobserver {__version__}")
+    p.add_argument("--version", action="version", version=f"matobserver {__version__} (contract schema_version {CONTRACT_SCHEMA_VERSION})")
     p.add_argument("--config", default=None, help="설정 파일 (기본: MATOBSERVER_CONFIG 또는 ./config/matobserver.yaml)")
     sub = p.add_subparsers(dest="command", required=True, parser_class=_Parser)
+    # `--config` 는 하위 명령 뒤에도 받는다 (작업 스케줄러 명령행 `matobserver serve --config <설정>`, deploy.md §1.6)
+    cp = argparse.ArgumentParser(add_help=False)
+    cp.add_argument("--config", default=argparse.SUPPRESS, help="설정 파일 (기본: MATOBSERVER_CONFIG 또는 ./config/matobserver.yaml)")
+    sp_ = argparse.ArgumentParser(add_help=False, parents=[cp])
+    sp_.add_argument("--run-mode", choices=("scheduler", "process"), default=None, help=argparse.SUPPRESS)
 
-    s = sub.add_parser("serve", help="REST API 서버", allow_abbrev=False)
+    s = sub.add_parser("serve", help="REST API 서버", allow_abbrev=False, parents=[sp_])
     s.add_argument("--host")
     s.add_argument("--port", type=int)
-    w = sub.add_parser("worker", help="잡 워커 (1개만 실행)", allow_abbrev=False)
+    w = sub.add_parser("worker", help="잡 워커 (1개만 실행)", allow_abbrev=False, parents=[sp_])
     w.add_argument("--once", action="store_true", help="큐를 비울 때까지 처리하고 종료")
     w.add_argument("--idle-sleep", type=float, default=1.0, help="큐가 비었을 때 대기(s)")
+
+    st = sub.add_parser("start", help="서버·워커 시작", allow_abbrev=False, parents=[cp])
+    st.add_argument("--service", choices=("server", "worker", "all"), default="all")
+    st.add_argument("--mode", choices=("auto", "scheduler", "process"), default="auto")
+    st.add_argument("--json", action="store_true")
+    sp = sub.add_parser("stop", help="서버·워커 정지", allow_abbrev=False, parents=[cp])
+    sp.add_argument("--service", choices=("server", "worker", "all"), default="all")
+    sp.add_argument("--timeout", type=float, default=30.0, help="정상 종료 대기(s), 이후 강제 종료")
+    sp.add_argument("--force", action="store_true", help="잡 실행 중이어도 정지")
+    sp.add_argument("--json", action="store_true")
+    ss_ = sub.add_parser("status", help="실행 상태", allow_abbrev=False, parents=[cp])
+    ss_.add_argument("--json", action="store_true")
+    dr = sub.add_parser("doctor", help="환경 점검 D01-D11", allow_abbrev=False, parents=[cp])
+    dr.add_argument("--json", action="store_true")
+    db = sub.add_parser("db", help="JobStore DB", allow_abbrev=False)
+    dbs = db.add_subparsers(dest="db_command", required=True, parser_class=_Parser)
+    mg = dbs.add_parser("migrate", help="DB 스키마를 코드 버전까지 전진", allow_abbrev=False, parents=[cp])
+    mg.add_argument("--no-backup", action="store_true")
+    mg.add_argument("--json", action="store_true")
 
     r = sub.add_parser("recipe", help="레시피 관리 (관리자 토큰)", allow_abbrev=False)
     rs = r.add_subparsers(dest="recipe_command", required=True, parser_class=_Parser)
 
     def common(sp: argparse.ArgumentParser) -> None:
+        sp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         sp.add_argument("--server", help="서버 주소 (기본: 설정 cli.server_url)")
         sp.add_argument("--token-file", help=f"관리자 토큰 파일 (또는 환경변수 {TOKEN_ENV})")
         sp.add_argument("--json", action="store_true", help="API 응답 JSON 그대로 출력")
@@ -390,6 +536,7 @@ def main(
     client_factory: ClientFactory | None = None,
     hooks: EngineHooks | None = None,
     serve_runner: Callable[..., Any] | None = None,
+    ops_env: OpsEnv | None = None,
 ) -> int:
     if stdout is None and stderr is None:
         _force_utf8_console()
@@ -403,6 +550,17 @@ def main(
             return _cmd_serve(args, ctx, serve_runner)
         if args.command == "worker":
             return _cmd_worker(args, ctx, hooks)
+        oenv = ops_env or OpsEnv(environ=ctx.env)
+        if args.command == "start":
+            return _cmd_start(args, ctx, oenv)
+        if args.command == "stop":
+            return _cmd_stop(args, ctx, oenv)
+        if args.command == "status":
+            return _cmd_status(args, ctx, oenv)
+        if args.command == "doctor":
+            return _cmd_doctor(args, ctx, oenv)
+        if args.command == "db":
+            return _cmd_db_migrate(args, ctx)
         if args.recipe_command == "add":
             return _cmd_recipe_add(args, ctx)
         if args.recipe_command == "list":

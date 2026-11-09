@@ -28,6 +28,7 @@ ENV_CONFIG_PATH: Final = "MATOBSERVER_CONFIG"
 DEFAULT_CONFIG_PATH: Final = "./config/matobserver.yaml"
 ENV_PREFIX: Final = "MATOBSERVER__"
 SECRET_REF_PREFIX: Final = "env:"
+SECRET_FILE_PREFIX: Final = "file:"
 
 class _YamlLoader(yaml.SafeLoader):
     """PyYAML(YAML 1.1)은 `2.1e11`·`1e-3`(소수점 또는 지수 부호 없음)을 문자열로 읽는다.
@@ -117,7 +118,16 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("matnexus.token", "env:MATNEXUS_TOKEN", "api.md §2: 서비스 계정 PAT, `env:VAR` 참조 형식 허용", types=_STR_OR_NONE),
     _k("matnexus.timeout_s", 30.0, f"api.md §2 ({_NO_VALUE})", types=_NUM),
     _k("matnexus.curve_max_points", 5000, "result.md §4.11 예시 traceability.matnexus.curve_max_points"),
+    _k("matnexus.probe_path", "/api/test-runs?limit=1", "deploy.md §2.2 D09(1.3): doctor 연결·토큰 확인용 GET 경로"),
     _k("worker.cancel_poll_s", 5, "api.md §4.12: 워커 취소 폴링(s)", types=_NUM),
+    _k("worker.heartbeat_s", 10, "deploy.md §2.1(1.3): 워커 하트비트 주기(s)", types=_NUM),
+    # ---- runtime · logging · doctor (deploy.md §1.8, §2) ----
+    _k("runtime.pid_dir", None, "deploy.md §2.1(1.3): PID 폴더 (null -> <paths.data_dir>/run)", types=_STR_OR_NONE),
+    _k("logging.dir", "./logs", "deploy.md §1.8(1.3): server.log·worker.log 폴더 (설치 스크립트는 <InstallRoot>\\logs 로 씀)"),
+    _k("logging.max_bytes", 10485760, "deploy.md §1.8(1.3): 로그 회전 크기(10 MiB)"),
+    _k("logging.backups", 5, "deploy.md §1.8(1.3): 회전 보관 개수"),
+    _k("doctor.min_free_bytes", 10737418240, "deploy.md §2.2 D05(1.3): 최소 여유 공간(10 GiB)", types=_NUM),
+    _k("doctor.command_timeout_s", 10, "deploy.md §2.2 D04(1.3): version_command 시간 상한(s)", types=_NUM),
     # ---- registry · recipes · recipe_verify · cli ----
     _k("registry.paths", ["config/plugins.d"], "plugins.md §2: 아래 *.yaml을 이름순으로 모두 읽는다"),
     _k("recipes.store_dir", "./data/recipes", f"recipe.md §2 ({_NO_VALUE})"),
@@ -147,6 +157,8 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     # ---- solver.lsdyna (plugins.md §4.2, U-1 환경 미정) ----
     _k("solver.lsdyna.batch_command", ["{script}", "-i", "{main}", "-n", "{ncpu}"],
        "module-boundaries.md §6: 인자 템플릿 리스트. 치환 키 {script} {main} {ncpu}"),
+    _k("solver.lsdyna.executable", None, "deploy.md §2.2 D04(1.3): 파일 버전 정보를 읽을 LS-DYNA 실행 파일 (선택)", types=_STR_OR_NONE),
+    _k("solver.lsdyna.version_command", None, "deploy.md §2.2 D04(1.3): 해석 없이 버전을 출력하는 명령 인자 리스트 (선택)", types=(list, type(None))),
     _k("solver.lsdyna.script", None, "U-1 미결: 사내 배치 스크립트 경로 (환경별 필수 입력)", types=_STR_OR_NONE),
     _k("solver.lsdyna.mode", "smp", "module-boundaries.md §6 smp|mpp", choices=("smp", "mpp")),
     _k("solver.lsdyna.ncpu", 4, "module-boundaries.md §6: 기본 4"),
@@ -328,7 +340,7 @@ def _validate(key: str, value: Any) -> Any:
     return value
 
 
-def _flatten_into(flat: dict[str, Any], node: Any, prefix: str, origin: str) -> None:
+def _flatten_into(flat: dict[str, Any], node: Any, prefix: str, origin: str, unknown: list[str] | None = None) -> None:
     """중첩 사전을 점 표기 키로 펴며 `flat`에 반영한다. 모르는 키는 오류."""
     if not isinstance(node, Mapping):
         raise ConfigError(f"{origin}: section {prefix!r} must be a mapping, got {type(node).__name__}")
@@ -339,7 +351,9 @@ def _flatten_into(flat: dict[str, Any], node: Any, prefix: str, origin: str) -> 
         if path in SPECS_BY_KEY:
             _assign(flat, path, value, origin)
         elif path in _PREFIXES:
-            _flatten_into(flat, value, path, origin)
+            _flatten_into(flat, value, path, origin, unknown)
+        elif unknown is not None:
+            unknown.append(path)  # doctor D01: 알 수 없는 키는 경고로만 모은다
         else:
             raise ConfigError(f"{origin}: unknown config key {path!r}")
 
@@ -506,7 +520,16 @@ class Config:
 
 
 def resolve_secret(value: Any, env: Mapping[str, str] | None = None, *, key: str = "<value>") -> Any:
-    """`env:VAR` 참조를 환경변수 값으로 푼다. 참조가 아니면 그대로."""
+    """`env:VAR`(환경변수) · `file:<경로>`(파일 첫 줄, 앞뒤 공백 제거, deploy.md §2.4) 참조를 푼다. 참조가 아니면 그대로."""
+    if isinstance(value, str) and value.startswith(SECRET_FILE_PREFIX):
+        fpath = value[len(SECRET_FILE_PREFIX):].strip()
+        if not fpath:
+            raise ConfigError(f"config key {key!r}: empty file reference")
+        try:
+            text = Path(fpath).expanduser().read_text(encoding="utf-8-sig")
+        except OSError as e:
+            raise ConfigError(f"config key {key!r}: cannot read secret file {fpath!r}: {e.strerror or e}") from e
+        return (text.splitlines() or [""])[0].strip()
     if isinstance(value, str) and value.startswith(SECRET_REF_PREFIX):
         var = value[len(SECRET_REF_PREFIX):]
         if not var:
@@ -518,7 +541,8 @@ def resolve_secret(value: Any, env: Mapping[str, str] | None = None, *, key: str
     return value
 
 
-def load_config(path: str | os.PathLike[str] | None = None, env: Mapping[str, str] | None = None) -> Config:
+def load_config(path: str | os.PathLike[str] | None = None, env: Mapping[str, str] | None = None,
+                unknown: list[str] | None = None) -> Config:
     """설정 로드: 기본값 ← YAML 파일 ← 환경변수.
 
     `path`가 주어지면 그 파일이 없을 때 오류. 없으면 `MATOBSERVER_CONFIG`(명시, 없으면 오류), 그것도 없으면
@@ -544,7 +568,7 @@ def load_config(path: str | os.PathLike[str] | None = None, env: Mapping[str, st
         except yaml.YAMLError as e:
             raise ConfigError(f"{source}: invalid YAML: {e}") from e
         if data is not None:
-            _flatten_into(flat, data, "", str(source))
+            _flatten_into(flat, data, "", str(source), unknown)
 
     for key, value, origin in _env_overrides(environ):
         _assign(flat, key, value, origin)

@@ -56,7 +56,7 @@ def test_engine_receives_calibration_spec(active_env):
                              recipe_params={"fric": 0.2})).json()["job_id"]
     drain(e, make_hooks(run=run))
     spec: CalibrationSpec = seen["spec"]
-    assert isinstance(spec, CalibrationSpec) and spec.job_id == jid and spec.schema_version == "1.2"
+    assert isinstance(spec, CalibrationSpec) and spec.job_id == jid and spec.schema_version == "1.3"
     assert spec.seed == 7 and dict(spec.budget) == {"max_evaluations": 33, "max_wall_time_s": 900.0, "run_timeout_s": 60.0}
     assert spec.optimizer[0] == "lsq" and spec.elastic_optimizer[0] == "lsq" and spec.solver[0] == "lsdyna"
     t = spec.tests[0]

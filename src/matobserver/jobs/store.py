@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Mapping, Sequence
@@ -72,6 +73,18 @@ class JobStore:
 
     def now(self) -> str:
         return iso(self.clock())
+
+    # ------------------------------------------------------------------ 워커 하트비트 (deploy.md §2.1)
+    def beat_worker(self, pid: int, job_id: str | None = None, *, ts: float | None = None) -> None:
+        with self.db.tx() as c:
+            c.execute("INSERT INTO worker_heartbeat (id, ts, pid, job_id) VALUES (1,?,?,?) "
+                      "ON CONFLICT(id) DO UPDATE SET ts=excluded.ts, pid=excluded.pid, job_id=excluded.job_id",
+                      (time.time() if ts is None else ts, pid, job_id))
+
+    def last_heartbeat(self) -> dict[str, Any] | None:
+        with self.db.connect() as c:
+            row = c.execute("SELECT ts, pid, job_id FROM worker_heartbeat WHERE id=1").fetchone()
+        return None if row is None else {"ts": row["ts"], "pid": row["pid"], "job_id": row["job_id"]}
 
     # ------------------------------------------------------------------ 생성
     def create_job(
