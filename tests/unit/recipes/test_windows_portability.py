@@ -28,7 +28,9 @@ def _zip_bytes(members: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for name, data in members.items():
-            zf.writestr(zipfile.ZipInfo(name), data)
+            zi = zipfile.ZipInfo("placeholder")
+            zi.filename = zi.orig_filename = name  # 생성 뒤 대입: Windows 의 ZipInfo(name) 은 `\\` 를 `/` 로 바꾸기 때문
+            zf.writestr(zi, data)
     return buf.getvalue()
 
 

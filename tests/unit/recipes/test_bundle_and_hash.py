@@ -16,10 +16,14 @@ from be_support import RECIPE_DIR, folder_zip
 
 
 def make_zip(files: dict[str, bytes], *, symlink: str | None = None) -> bytes:
+    """멤버 이름은 입력 그대로 담긴다. Windows 의 `ZipInfo(name)` 은 `\\` 를 `/` 로 바꾸므로, 생성 뒤에 filename 을 직접 대입해
+    OS 무관하게 원본 이름(`a\\b.k`)이 지역·중앙 헤더에 들어가게 한다."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for n, d in files.items():
-            zf.writestr(n, d)
+            zi = zipfile.ZipInfo("placeholder")
+            zi.filename = zi.orig_filename = n
+            zf.writestr(zi, d)
         if symlink:
             zi = zipfile.ZipInfo(symlink)
             zi.external_attr = (stat.S_IFLNK | 0o777) << 16
