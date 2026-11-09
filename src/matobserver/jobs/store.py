@@ -26,7 +26,7 @@ KIND_JOB = "job"
 KIND_VERIFICATION = "recipe_verification"
 
 #: iter(완료된 해석 평가 수)에 세는 history 단계. diagnostics·roundtrip·explicit_check 는 예산 밖이라 세지 않는다(api.md §4.9·§4.11).
-BUDGET_STAGES = frozenset({"elastic", "plastic"})
+BUDGET_STAGES = frozenset({"elastic", "plastic", "joint"})
 
 
 class JobNotFound(MatObserverError):

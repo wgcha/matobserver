@@ -1,6 +1,6 @@
 """오류 본문·예외 처리 (api.md §7).
 
-본문: `{"schema_version": "1.1", "error": {"code", "message", "details": [...]}}`. 서버 경로·내부 예외 문자열은 넣지 않는다.
+본문: `{"schema_version": "1.2", "error": {"code", "message", "details": [...]}}`. 서버 경로·내부 예외 문자열은 넣지 않는다.
 """
 
 from __future__ import annotations

@@ -179,6 +179,10 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("engine.default_seed", 20261108, "result.md §4.11 예시 seed (계약 값 없음 — 예시값 사용)"),
     _k("engine.stages.elastic.optimizer", "lsq", "plugins.md §4.1(1.1): 탄성 단계 기본 최적화기"),
     _k("engine.stages.plastic.optimizer", "lsq", "plugins.md §4.1(1.1): 탄소성 단계 기본 최적화기 (1.0 은 bo)"),
+    _k("engine.stages.joint.enabled", True, "plugins.md §4.1(1.2): 공동 재정밀화 단계 사용", types=(bool,)),
+    _k("engine.stages.joint.optimizer", "lsq", "plugins.md §4.1(1.2): joint 단계 최적화기"),
+    _k("engine.stages.joint.max_evaluations", None, "plugins.md §4.1(1.2): joint 상한 (null -> ceil(0.2*N))", types=_INT_OR_NONE),
+    _k("engine.stages.joint.e_bound_rel", 0.05, "plugins.md §4.1(1.2): joint 단계 E 범위 ±상대폭", types=_NUM),
     _k("engine.elastic_stage.optimizer", None, "1.0 별칭: 값이 있으면 engine.stages.elastic.optimizer 가 기본일 때 그 값을 쓴다", types=_STR_OR_NONE),
     _k("engine.plastic_stage.optimizer", None, "1.0 별칭: 값이 있으면 engine.stages.plastic.optimizer 가 기본일 때 그 값을 쓴다", types=_STR_OR_NONE),
     _k("engine.stagnation.k", 5, f"plugins.md §4.1: 연속 k회 정체 ({_NO_VALUE})"),
@@ -240,6 +244,7 @@ KEY_SPECS: Final[tuple[KeySpec, ...]] = (
     _k("material.mat024.max_strain", 0.2, "plugins.md §4.3 옵션 max_strain", types=_NUM),
     _k("material.mat024_coeff.default_law", "swift", "plugins.md §4.3 / U-1", choices=("swift", "voce", "swift_voce")),
     _k("material.mat024_table.nodes", 8, "plugins.md §4.3 옵션 table_nodes"),
+    _k("material.mat024_table.smoothing_weight", 0.01, "plugins.md §4.3(1.2): 테이블 인접 기울기 정칙화 가중", types=_NUM),
     _k("material.mat024_table.first_node_strain", 0.002, "plugins.md §4.3(1.1): 테이블 첫 노드 소성변형률", types=_NUM),
     # ---- result · uncertainty (result.md) ----
     _k("result.table_points", 50, "result.md §3.2 / plugins.md §4.3"),

@@ -181,6 +181,15 @@ engine:
     plastic:
       # plugins.md §4.1(1.1): 탄소성 단계 기본 최적화기 (1.0 은 bo)
       optimizer: lsq
+    joint:
+      # plugins.md §4.1(1.2): 공동 재정밀화 단계 사용
+      enabled: true
+      # plugins.md §4.1(1.2): joint 단계 최적화기
+      optimizer: lsq
+      # plugins.md §4.1(1.2): joint 상한 (null -> ceil(0.2*N))
+      max_evaluations: null
+      # plugins.md §4.1(1.2): joint 단계 E 범위 ±상대폭
+      e_bound_rel: 0.05
   # 1.0 별칭: 값이 있으면 engine.stages.elastic.optimizer 가 기본일 때 그 값을 쓴다
   elastic_stage:
     optimizer: null
@@ -317,6 +326,8 @@ material:
     nodes: 8
     # plugins.md §4.3(1.1): 테이블 첫 노드 소성변형률
     first_node_strain: 0.002
+    # plugins.md §4.3(1.2): 테이블 인접 기울기 정칙화 가중
+    smoothing_weight: 0.01
 
 result:
   # result.md §3.2 / plugins.md §4.3

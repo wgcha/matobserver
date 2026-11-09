@@ -9,8 +9,8 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 
-SCHEMA_VERSION = "1.1"
-SCHEMA_MAJOR, SCHEMA_MINOR = 1, 1
+SCHEMA_VERSION = "1.2"
+SCHEMA_MAJOR, SCHEMA_MINOR = 1, 2
 
 Number = Annotated[float, Field(strict=True)]  # int 허용(JSON 정수), 문자열·bool 거부
 
