@@ -371,6 +371,15 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _force_utf8_console() -> None:
+    """Windows 콘솔(cp949 등)에서 한글 출력이 UnicodeEncodeError 가 되지 않게 표준 출력을 UTF-8 로 맞춘다."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -382,6 +391,8 @@ def main(
     hooks: EngineHooks | None = None,
     serve_runner: Callable[..., Any] | None = None,
 ) -> int:
+    if stdout is None and stderr is None:
+        _force_utf8_console()
     ctx = _Ctx(stdout or sys.stdout, stderr or sys.stderr, os.environ if env is None else env, client_factory, stdin or sys.stdin)
     try:
         args = build_parser().parse_args(argv)

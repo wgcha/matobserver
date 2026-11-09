@@ -83,7 +83,10 @@ def test_symlink_pointing_outside_root_is_404(active_env):
     secret = e.root / "secret2.txt"
     secret.write_text("outside", encoding="utf-8")
     link = root / "link.csv"
-    os.symlink(secret, link)
+    try:
+        os.symlink(secret, link)
+    except OSError:
+        pytest.skip("symlink 권한 없음 (Windows)")
     with e.ctx.db.tx() as c:
         c.execute("UPDATE artifacts SET rel_path='link.csv' WHERE artifact_id=?", (art["artifact_id"],))
     r = e.get(f"/v1/artifacts/{art['artifact_id']}")

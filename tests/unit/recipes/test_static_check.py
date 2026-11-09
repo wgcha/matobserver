@@ -80,7 +80,10 @@ def m_generator_unknown(d):
 
 
 def m_path_unsafe(d):
-    os.symlink("/etc/hostname", d / "deck" / "link.k")
+    try:
+        os.symlink("/etc/hostname", d / "deck" / "link.k")
+    except OSError:
+        pytest.skip("symlink 권한 없음 (Windows)")
 
 
 def m_path_unsafe_manifest(d):

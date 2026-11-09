@@ -41,7 +41,9 @@ _EXPLICIT_KEYS = {
 def scrub_paths(message: str, roots: list[Path]) -> str:
     """메시지 안의 서버 절대 경로를 `<path>` 로 바꾼다."""
     out = message
-    for r in sorted({str(p.resolve()) for p in roots} | {str(p) for p in roots}, key=len, reverse=True):
+    forms = {str(p.resolve()) for p in roots} | {str(p) for p in roots}
+    forms |= {f.replace("\\", "/") for f in forms}  # Windows: 역슬래시·슬래시 두 표기 모두
+    for r in sorted(forms, key=len, reverse=True):
         if r and r != "/":
             out = out.replace(r, "<path>")
     return out

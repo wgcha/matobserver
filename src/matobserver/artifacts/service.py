@@ -199,7 +199,7 @@ class ArtifactService:
         if self.is_expired(rec):
             raise ArtifactExpired(artifact_id)
         rel = Path(rec.rel_path)
-        if rel.is_absolute() or ".." in rel.parts:
+        if rel.is_absolute() or rel.anchor or ".." in rel.parts:
             raise ArtifactNotFound(artifact_id)
         root = self.artifact_root(rec.owner_kind, rec.owner_id).resolve()
         full = (root / rel).resolve()

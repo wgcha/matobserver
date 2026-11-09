@@ -146,7 +146,10 @@ def test_duplicate_member_rejected(tmp_path):
 
 def test_scan_tree_flags_symlinks(tmp_path):
     (tmp_path / "a.k").write_text("x")
-    os.symlink(tmp_path / "a.k", tmp_path / "link.k")
+    try:
+        os.symlink(tmp_path / "a.k", tmp_path / "link.k")
+    except OSError:
+        pytest.skip("symlink 권한 없음 (Windows)")
     entries, bad = scan_tree(tmp_path)
     assert [e.path for e in entries] == ["a.k"] and bad == [("link.k", "심볼릭 링크")]
 

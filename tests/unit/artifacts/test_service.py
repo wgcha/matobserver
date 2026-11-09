@@ -82,7 +82,10 @@ def test_register_via_symlink_escape_is_blocked(svc, tmp_path):
     secret.write_text("s")
     d = svc.work_root(OWNER_JOB, "cal_a") / "artifacts"
     d.mkdir(parents=True)
-    os.symlink(secret, d / "link.txt")
+    try:
+        os.symlink(secret, d / "link.txt")
+    except OSError:
+        pytest.skip("symlink 권한 없음 (Windows)")
     with pytest.raises(ValueError):
         svc.register(OWNER_JOB, "cal_a", d / "link.txt", "history")
 
