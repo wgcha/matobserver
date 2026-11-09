@@ -34,3 +34,4 @@
 - 2026-11-09 · table 평활 가중·자동 max_strain은 설정·옵션으로 기록해 input_hash/config_hash와 메타데이터에 반영 — 같은 input_hash → 같은 결과 규칙 유지
 - 2026-11-09 · 실행 대상 OS는 Windows(LS-DYNA PC) — GitHub Actions windows-latest CI로 LS-DYNA 제외 테스트 검증, 빠른 시작 문서·예제는 PowerShell 기준
 - 2026-11-09 · 배포는 PowerShell 설치 스크립트(install.ps1: venv·릴리스 태그 설치·설정 생성·작업 스케줄러 등록·점검, -Update로 업데이트) + CLI start/stop/status/doctor — 단일 exe(PyInstaller)는 네이티브 의존성으로 취약, 수동 설치는 비개발자 사용 불가
+- 2026-11-09 · G2 통과(Verifier 독립 판정, HEAD 3e94d81) — 실서비스 경로 잡 43건 성공, 노이즈 0.5% 13시드: 테이블 coeff 1.68/4.60%·table 2.53/3.72%, |E| 0.27/0.81%, J비 ≤1.004. 비차단 잔여: joint 거절 분기 실측 없음, runner Windows 수정 후 재확인
