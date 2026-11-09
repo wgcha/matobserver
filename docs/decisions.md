@@ -33,3 +33,4 @@
 - 2026-11-09 · G2 노이즈 판정은 다중 시드 분포 기준(테이블 중앙값 ≤3%·최대 ≤5%, J비 ≤1.2 전 시드), 소성 단계 뒤 E·소성 공동 재정밀화 단계 추가 — 단일 시드 판정은 정보 한계에 걸림, 순차 E 고정이 노이즈 편향을 소성으로 전파
 - 2026-11-09 · table 평활 가중·자동 max_strain은 설정·옵션으로 기록해 input_hash/config_hash와 메타데이터에 반영 — 같은 input_hash → 같은 결과 규칙 유지
 - 2026-11-09 · 실행 대상 OS는 Windows(LS-DYNA PC) — GitHub Actions windows-latest CI로 LS-DYNA 제외 테스트 검증, 빠른 시작 문서·예제는 PowerShell 기준
+- 2026-11-09 · 배포는 PowerShell 설치 스크립트(install.ps1: venv·릴리스 태그 설치·설정 생성·작업 스케줄러 등록·점검, -Update로 업데이트) + CLI start/stop/status/doctor — 단일 exe(PyInstaller)는 네이티브 의존성으로 취약, 수동 설치는 비개발자 사용 불가
