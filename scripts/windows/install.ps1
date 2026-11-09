@@ -40,8 +40,8 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-# U-1 미결: 릴리스 저장소(owner/name)가 확정되면 이 값을 바꾼다. -Repo 로 덮어쓸 수 있다.
-$script:DefaultRepo = 'OWNER/matobserver'
+# 릴리스 저장소(owner/name). -Repo 로 덮어쓸 수 있다.
+$script:DefaultRepo = 'wgcha/matobserver'
 # 지원 Python 범위. 상한은 의존 패키지(lasso-python -> h5py 등) 휠이 있는 최신 버전. 환경변수 MATOBSERVER_PYTHON_MAX 로 올릴 수 있다.
 $script:PythonMin = '3.11'
 $script:PythonMax = '3.13'

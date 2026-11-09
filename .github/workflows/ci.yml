@@ -2,10 +2,12 @@ name: ci
 
 on:
   push:
+    branches: ['**']   # 태그 푸시는 release.yml 이 이 워크플로를 재사용한다
   pull_request:
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
