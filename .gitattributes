@@ -1,0 +1,11 @@
+# 저장소 내 텍스트는 OS와 무관하게 LF로 체크아웃 (Windows autocrlf로 픽스처·해시가 바뀌는 것 방지)
+* text=auto eol=lf
+
+# 바이너리
+*.stp binary
+*.step binary
+*.zip binary
+*.png binary
+*.h5 binary
+*.parquet binary
+tests/fixtures/solver/binout* binary

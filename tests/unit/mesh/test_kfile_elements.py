@@ -80,7 +80,6 @@ def test_header_fields():
 
 
 @pytest.mark.parametrize("mutate, msg", [
-    (lambda t: t.replace("\n", "\r\n"), "CR"),
     (lambda t: t.replace("*KEYWORD\n", "", 1), "first line"),
     (lambda t: t.replace("*END\n", ""), "last line"),
     (lambda t: t.replace("*SET_PART_LIST", "*PART"), "not allowed"),
@@ -162,3 +161,17 @@ def test_grid_conforming_tet_mesh():
             faces[f] = faces.get(f, 0) + 1
     assert max(faces.values()) == 2  # 내부 면은 정확히 두 요소가 공유(적합)
     assert np.isclose(elements.tet4_volume(nodes[tets]).sum(), 1.0)
+
+
+@pytest.mark.parametrize("eol", ["\r\n", "\r"])
+def test_reader_accepts_crlf_and_cr(eol):
+    lf = _tiny("tet10")
+    a = kfile.read_k(lf.encode())
+    b = kfile.read_k(lf.replace("\n", eol).encode())
+    assert not a.line_endings_normalized and b.line_endings_normalized
+    assert (a.nodes, a.solids, a.node_sets, a.part_sets, a.header) == (b.nodes, b.solids, b.node_sets, b.part_sets,
+                                                                     b.header)
+
+
+def test_writer_output_is_lf_only():
+    assert "\r" not in _tiny("tet4")

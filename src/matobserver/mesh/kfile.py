@@ -1,6 +1,6 @@
 """메시 .k(include) writer·reader — module-boundaries.md §2 규격.
 
-* ASCII, LF, 첫 줄 `*KEYWORD`, 끝 `*END`, 데이터 줄 ≤ 80칸(`$` 주석 줄은 ≤ 256칸).
+* ASCII, LF(쓰기는 OS 무관 LF 고정·바이트 쓰기, 읽기는 CRLF·CR 허용 후 LF 정규화), 첫 줄 `*KEYWORD`, 끝 `*END`, 데이터 줄 ≤ 80칸(`$` 주석 줄은 ≤ 256칸).
 * 머리 주석 3줄: `$ matobserver mesh` / `$ generator=... version=... topology=... target_size_mm=... units=mm-N-s-tonne`
   / `$ input_sha256=<hex>`.
 * `*NODE`: NID i8, X·Y·Z e16.9, TC·RC i8.
@@ -230,6 +230,7 @@ class KFile:
     parts: dict[int, tuple[str, int, int]] = field(default_factory=dict)  # pid → (title, secid, mid)
     sections: dict[int, tuple[int, float]] = field(default_factory=dict)  # secid → (elform, t1 mm)
     rigid_mats: dict[int, tuple[float, float, float]] = field(default_factory=dict)  # mid → (ro, E, pr) 파일 단위
+    line_endings_normalized: bool = False  # 입력에 CR/CRLF 가 있어 LF 로 정규화했음(경고용)
 
     def header_fields(self) -> dict[str, str]:
         out: dict[str, str] = {}
@@ -264,11 +265,12 @@ def read_k(data: bytes | str, kind: str = "specimen") -> KFile:
     if isinstance(data, bytes):
         if not data.isascii():
             raise KFormatError("file is not ASCII")
-        if b"\r" in data:
-            raise KFormatError("CR found: line endings must be LF")
         text = data.decode("ascii")
     else:
         text = data
+    crlf = "\r" in text
+    if crlf:  # Windows 도구(LS-PrePost 등) 산출 CRLF·CR 허용 → LF 정규화(쓰기는 항상 LF)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.endswith("\n"):
         raise KFormatError("file must end with newline")
     lines = text[:-1].split("\n")
@@ -278,6 +280,7 @@ def read_k(data: bytes | str, kind: str = "specimen") -> KFile:
         raise KFormatError("last line must be *END")
     allowed = SPECIMEN_KEYWORDS if kind == "specimen" else JIG_KEYWORDS
     kf = KFile()
+    kf.line_endings_normalized = crlf
     for ln in lines:
         if len(ln) > (COMMENT_LINE_MAX if ln.startswith("$") else LINE_MAX):
             raise KFormatError(f"line exceeds 80 columns: {ln!r}")

@@ -230,7 +230,8 @@ def write_result_json(out_dir: Path, key: str, data: Mapping[str, Any]) -> None:
         except (OSError, ValueError):
             doc = {}
     doc[key] = data
-    p.write_text(json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    with open(p, "w", encoding="utf-8", newline="\n") as fh:  # OS 무관 LF
+        fh.write(json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
 def mesh_result_json(r: MeshResult) -> dict[str, Any]:

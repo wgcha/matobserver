@@ -51,7 +51,20 @@ def test_samples_match_current_writer(tmp_path):
     out = gen.generate(tmp_path)
     for key, path in out.items():
         name = SAMPLES.get(key, "jig_quarter.k")
-        assert path.read_bytes() == (FIX / name).read_bytes(), f"{name} differs: regenerate samples if intended"
+        produced = path.read_bytes()
+        assert b"\r" not in produced  # 쓰기는 OS 무관 LF
+        expected = (FIX / name).read_bytes().replace(b"\r\n", b"\n")  # CRLF 체크아웃 허용
+        assert produced == expected, f"{name} differs: regenerate samples if intended"
+
+
+@pytest.mark.parametrize("topology", list(SAMPLES))
+def test_crlf_sample_reads_same_mesh(tmp_path, topology):
+    lf = (FIX / SAMPLES[topology]).read_bytes().replace(b"\r\n", b"\n")
+    crlf_path = tmp_path / "crlf.k"
+    crlf_path.write_bytes(lf.replace(b"\n", b"\r\n"))
+    a, b = kfile.read_k(lf), kfile.read_k(crlf_path.read_bytes())
+    assert b.line_endings_normalized
+    assert (a.nodes, a.solids, a.node_sets, a.part_sets) == (b.nodes, b.solids, b.node_sets, b.part_sets)
 
 
 
