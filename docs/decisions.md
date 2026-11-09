@@ -37,3 +37,4 @@
 - 2026-11-09 · G2 통과(Verifier 독립 판정, HEAD 3e94d81) — 실서비스 경로 잡 43건 성공, 노이즈 0.5% 13시드: 테이블 coeff 1.68/4.60%·table 2.53/3.72%, |E| 0.27/0.81%, J비 ≤1.004. 비차단 잔여: joint 거절 분기 실측 없음, runner Windows 수정 후 재확인
 - 2026-11-09 · 설치 스크립트 기본 릴리스 저장소 wgcha/matobserver(public) — 인증 없이 릴리스 설치 가능
 - 2026-11-09 · Windows CI 전 잡 통과(eacf9b3): windows/ubuntu × py3.11·3.12 테스트, install.ps1 설치 스모크, pwsh 구문 — CRLF(.gitattributes·읽기 허용·쓰기 LF), Python 3.11–3.13 선택, zip 백슬래시 거절, taskkill /T
+- 2026-11-09 · 저장소 wgcha/matobserver 공개 유지(사용자 승인), v* 태그 푸시 시 릴리스 워크플로가 CI 통과 확인 후 wheel·SHA256SUMS를 GitHub 릴리스로 게시, 첫 릴리스 v0.4.0 — install.ps1이 인증 없이 릴리스 설치
