@@ -52,7 +52,7 @@ MAX_POINTS = 20000
 
 
 def _dump(path: Path, obj: Any) -> None:
-    path.write_text(json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
+    path.write_text(json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True), encoding="utf-8", newline="\n")
 
 
 def _plain(obj: Any) -> Any:

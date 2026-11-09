@@ -90,7 +90,7 @@ schema_version: 1.3 · 상태: 승인(G1, MINOR 1.3) · 2026-11-09
 | --- | --- |
 | 0 | 성공(doctor FAIL 없음; WARN은 성공) |
 | 10 | PowerShell·OS 요구 미충족 |
-| 11 | Python 없음 또는 3.11 미만 |
+| 11 | Python 없음, 3.11 미만, 또는 지원 상한(기본 3.13, `MATOBSERVER_PYTHON_MAX`) 초과 |
 | 12 | venv 생성 실패 |
 | 13 | 다운로드·해시 검증·pip 설치 실패 |
 | 14 | 설정 생성 실패, 비대화형 필수값 누락 |

@@ -53,7 +53,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -66,7 +66,8 @@ jobs:
         shell: powershell
         run: |
           $whl = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
-          & .\scripts\windows\tests\smoke.ps1 -Wheel $whl
+          $py = (Get-Command python).Source   # setup-python 3.12 (지원 범위 3.11-3.13; 러너 기본 최신 Python 은 의존 휠이 없을 수 있음)
+          & .\scripts\windows\tests\smoke.ps1 -Wheel $whl -Python $py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload install logs on failure

@@ -5,7 +5,8 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Wheel,
-    [string]$Root = ''
+    [string]$Root = '',
+    [string]$Python = ''   # CI 의 setup-python 경로. 지원 범위(3.11-3.13) 밖 기본 Python 을 피한다
 )
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,7 @@ function Assert-That([bool]$Condition, [string]$Message) {
 }
 
 function Invoke-Installer([string[]]$ScriptArgs) {
+    if ($Python -and ($ScriptArgs -notcontains '-Python')) { $ScriptArgs += @('-Python', $Python) }
     & $psExe -NoProfile -ExecutionPolicy Bypass -File $installer @ScriptArgs | Out-Host
     return $LASTEXITCODE
 }
@@ -58,6 +60,12 @@ $fake = Join-Path $Root 'fakepy.cmd'
 Set-Content -LiteralPath $fake -Value "@echo off`r`necho 3.8 64`r`necho C:\fake\python.exe`r`n" -Encoding ASCII
 $code = Invoke-Installer @('-NonInteractive', '-NoSchedule', '-Python', $fake, '-Wheel', $Wheel, '-LsDynaBatchScript', $bat, '-InstallRoot', (Join-Path $Root 'e11'))
 Assert-That ($code -eq 11) "Python 3.8 -> exit 11 (got $code)"
+
+# ---- exit code 11: Python newer than the supported range (3.15 has no dependency wheels) ----------------
+$fake2 = Join-Path $Root 'fakepy315.cmd'
+Set-Content -LiteralPath $fake2 -Value "@echo off`r`necho 3.15 64`r`necho C:\fake\python.exe`r`n" -Encoding ASCII
+$code = Invoke-Installer @('-NonInteractive', '-NoSchedule', '-Python', $fake2, '-Wheel', $Wheel, '-LsDynaBatchScript', $bat, '-InstallRoot', (Join-Path $Root 'e11b'))
+Assert-That ($code -eq 11) "Python 3.15 (above supported range) -> exit 11 (got $code)"
 
 # ---- fresh install ----------------------------------------------------------------------------------
 $r1 = Join-Path $Root 'a'

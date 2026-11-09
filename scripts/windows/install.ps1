@@ -41,7 +41,11 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 # U-1 미결: 릴리스 저장소(owner/name)가 확정되면 이 값을 바꾼다. -Repo 로 덮어쓸 수 있다.
-$script:DefaultRepo = 'wgcha/matobserver'
+$script:DefaultRepo = 'OWNER/matobserver'
+# 지원 Python 범위. 상한은 의존 패키지(lasso-python -> h5py 등) 휠이 있는 최신 버전. 환경변수 MATOBSERVER_PYTHON_MAX 로 올릴 수 있다.
+$script:PythonMin = '3.11'
+$script:PythonMax = '3.13'
+if ($env:MATOBSERVER_PYTHON_MAX -match '^\d+\.\d+$') { $script:PythonMax = $env:MATOBSERVER_PYTHON_MAX }
 $script:TaskPath = '\matobserver\'
 $script:TaskNames = @('matobserver-server', 'matobserver-worker')
 $script:TranscriptOn = $false
@@ -175,39 +179,62 @@ function Test-Environment {
 }
 
 # ---------------------------------------------------------------------------------------------- 2. Python
-function Find-Python {
-    Write-Step 'Python 확인'
-    $candidates = @()
-    if ($Python) {
-        $candidates += , @($Python)
-    } else {
-        $candidates += , @('py', '-3')
-        $candidates += , @('python')
-        $candidates += , @('python3')
-    }
+function Get-PythonInfo {
+    # (실행 파일 + 선행 인자) 후보를 한 번 실행해 {Major, Minor, Bits, Path} 를 얻는다. 실행 실패·형식 불일치는 $null.
+    param([string]$Exe, [string[]]$PreArgs = @())
     $probe = "import sys,struct;print('%d.%d %d' % (sys.version_info[0],sys.version_info[1],struct.calcsize('P')*8));print(sys.executable)"
-    $seen = ''
-    foreach ($c in $candidates) {
-        $exe = $c[0]
-        $pre = @()
-        if ($c.Count -gt 1) { $pre = $c[1..($c.Count - 1)] }
-        if (-not $Python -and -not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
-        $r = Invoke-Native -Exe $exe -Arguments ($pre + @('-c', $probe)) -Quiet
-        if ($r.Code -ne 0) { continue }
-        $lines = @($r.Output -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        if ($lines.Count -lt 1 -or $lines[0] -notmatch '^(\d+)\.(\d+) (\d+)$') { continue }
-        $maj = [int]$Matches[1]; $min = [int]$Matches[2]; $bits = [int]$Matches[3]
-        $seen = ("{0}.{1} ({2}비트)" -f $maj, $min, $bits)
-        if (($maj -gt 3 -or ($maj -eq 3 -and $min -ge 11)) -and $bits -eq 64) {
-            $real = $exe
-            if ($lines.Count -ge 2 -and (Test-Path -LiteralPath $lines[1])) { $real = $lines[1] }
-            Write-Host ("Python {0}.{1} 사용: {2}" -f $maj, $min, $real)
-            return $real
+    $r = Invoke-Native -Exe $Exe -Arguments ($PreArgs + @('-c', $probe)) -Quiet
+    if ($r.Code -ne 0) { return $null }
+    $lines = @($r.Output -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($lines.Count -lt 1 -or $lines[0] -notmatch '^(\d+)\.(\d+) (\d+)$') { return $null }
+    $real = $Exe
+    if ($lines.Count -ge 2 -and (Test-Path -LiteralPath $lines[1])) { $real = $lines[1] }
+    return [pscustomobject]@{ Major = [int]$Matches[1]; Minor = [int]$Matches[2]; Bits = [int]$Matches[3]; Path = $real }
+}
+
+function Get-PythonCandidates {
+    # 설치된 인터프리터 후보 경로. `py -0p` (Python 런처 목록) + PATH 의 python/python3.
+    $paths = New-Object System.Collections.Generic.List[string]
+    if (Get-Command 'py' -ErrorAction SilentlyContinue) {
+        $r = Invoke-Native -Exe 'py' -Arguments @('-0p') -Quiet
+        foreach ($line in ($r.Output -split "`n")) {
+            if ($line -match '(?i)([A-Za-z]:\\[^\r\n]*?python[w]?\.exe)\s*$') { $paths.Add($Matches[1].Trim()) }
         }
     }
-    $msg = 'Python 3.11 이상(64비트)이 필요합니다.'
-    if ($seen) { $msg += ' 발견된 버전: ' + $seen + '.' }
-    $msg += " https://www.python.org/downloads/windows/ 에서 설치한 뒤 다시 실행하세요 (자동 설치하지 않습니다)."
+    foreach ($n in @('python', 'python3')) {
+        $cmd = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd -and $cmd.Source) { $paths.Add([string]$cmd.Source) }
+    }
+    return @($paths | Select-Object -Unique)
+}
+
+function Find-Python {
+    # 지원 범위(PythonMin..PythonMax)에서 가장 높은 64비트 버전을 고른다. 범위 밖(예: 의존 휠이 아직 없는 최신 버전)만 있으면 안내 후 종료(11).
+    Write-Step 'Python 확인'
+    $found = New-Object System.Collections.Generic.List[object]
+    if ($Python) {
+        $info = Get-PythonInfo -Exe $Python
+        if ($info) { $found.Add($info) }
+    } else {
+        foreach ($p in (Get-PythonCandidates)) {
+            $info = Get-PythonInfo -Exe $p
+            if ($info) { $found.Add($info) }
+        }
+    }
+    $minV = [version]$script:PythonMin
+    $maxV = [version]$script:PythonMax
+    $ok = @($found | Where-Object { $_.Bits -eq 64 -and ([version]('{0}.{1}' -f $_.Major, $_.Minor)) -ge $minV -and ([version]('{0}.{1}' -f $_.Major, $_.Minor)) -le $maxV })
+    if ($ok.Count -gt 0) {
+        $best = $ok | Sort-Object -Property @{ Expression = { [version]('{0}.{1}' -f $_.Major, $_.Minor) } } -Descending | Select-Object -First 1
+        Write-Host ("Python {0}.{1} 사용: {2}" -f $best.Major, $best.Minor, $best.Path)
+        return $best.Path
+    }
+    $msg = ('지원하는 Python 은 {0} ~ {1} (64비트) 입니다.' -f $script:PythonMin, $script:PythonMax)
+    if ($found.Count -gt 0) {
+        $seen = ($found | ForEach-Object { '{0}.{1} ({2}비트)' -f $_.Major, $_.Minor, $_.Bits }) -join ', '
+        $msg += ' 발견된 버전: ' + $seen + ' — 범위 밖입니다.'
+    }
+    $msg += " https://www.python.org/downloads/windows/ 에서 지원 범위의 Python 을 설치하거나 -Python 으로 경로를 지정하세요 (자동 설치하지 않습니다)."
     Stop-Install 11 $msg
 }
 

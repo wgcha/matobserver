@@ -59,6 +59,7 @@ class OpsEnv:
     spawn: Callable[[list[str], Path, Mapping[str, str]], Any] = default_spawn
     run: Callable[..., Any] = subprocess.run
     http_get: Callable[..., tuple[int | None, Any, float]] = default_http_get
+    kill: Callable[[int], None] = kill_process  # 강제 종료(자식 포함). Windows: taskkill /T /F
     sleep: Callable[[float], None] = time.sleep
     monotonic: Callable[[], float] = time.monotonic
     is_windows: bool = field(default_factory=lambda: sys.platform == "win32")
@@ -162,7 +163,7 @@ def stop(cfg: Config, service: str, timeout_s: float, force: bool, env: OpsEnv) 
         if not graceful:
             if st["mode"] == "scheduler" and env.is_windows:
                 env.run(["schtasks", "/End", "/TN", TASK_NAMES[svc]], capture_output=True, check=False)
-            kill_process(pid, run=env.run)
+            env.kill(pid)
             for _ in range(50):
                 if not pid_alive(pid):
                     break

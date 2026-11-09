@@ -184,3 +184,28 @@ def test_stop_scheduler_mode_ends_task_when_not_graceful(ops):
     write_pidfile(pid_path(ops.cfg(), "server"), p.pid, "scheduler")
     code, out, _ = ops.cli("stop", "--service", "server", "--timeout", "0.1", "--json", windows=True)
     assert code == 0 and ["schtasks", "/End", "/TN", svc.TASK_NAMES["server"]] in ops.run_calls
+
+
+def test_kill_process_uses_taskkill_tree_on_windows(monkeypatch):
+    """Windows: `taskkill /PID n /T /F` (자식 포함). 종료 코드는 해석하지 않고 pid_alive 로 판정한다."""
+    from matobserver.ops import runtime
+
+    calls = []
+    monkeypatch.setattr(runtime.sys, "platform", "win32")
+    runtime.kill_process(4321, run=lambda cmd, **kw: calls.append(cmd))
+    assert calls == [["taskkill", "/PID", "4321", "/T", "/F"]]
+
+
+def test_forced_stop_uses_injectable_kill_not_the_fake_run(ops):
+    """강제 종료는 `OpsEnv.kill` 로 한다 — schtasks 대역(run)이 taskkill 을 삼켜 프로세스가 남던 Windows 실패의 회귀."""
+    ops.cli("start", "--service", "server", "--mode", "process")
+    pid = pidfile(ops, "server")["pid"]
+    killed = []
+    env = ops.env()
+    env.kill = lambda p: (killed.append(p), __import__("os").kill(p, 9))
+    import io
+    from matobserver import cli
+    out = io.StringIO()
+    code = cli.main(["stop", "--service", "server", "--timeout", "0.1", "--json", "--config", str(ops.config_path)], env={},
+                    stdout=out, stderr=io.StringIO(), ops_env=env)
+    assert code == 0 and killed == [pid] and not pid_alive(pid)

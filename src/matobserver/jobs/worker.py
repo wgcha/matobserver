@@ -232,7 +232,7 @@ class Worker:
         try:
             work = self.artifacts.work_root(OWNER_JOB, job_id)
             work.mkdir(parents=True, exist_ok=True)
-            (work / "worker_error.log").write_text("".join(traceback.format_exception(exc)), encoding="utf-8")
+            (work / "worker_error.log").write_text("".join(traceback.format_exception(exc)), encoding="utf-8", newline="\n")
         except OSError:
             pass
 
@@ -251,7 +251,7 @@ class Worker:
             out = work / "artifacts"
             out.mkdir(parents=True, exist_ok=True)
             path = out / "result.json"
-            path.write_text(json.dumps(body, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            path.write_text(json.dumps(body, ensure_ascii=False, indent=2, default=str), encoding="utf-8", newline="\n")
             self.artifacts.register(OWNER_JOB, job_id, path, "result_json")
             recs = {a.artifact_id: a for a in self.artifacts.list_for_owner(OWNER_JOB, job_id)}
         listed: list[Any] = list(result.get("artifacts") or [])

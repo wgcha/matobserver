@@ -151,7 +151,7 @@ def fake_run_calibration(spec: Any, services: Any) -> dict[str, Any]:
         services.record_eval({"eval_index": i, "stage": "elastic" if i < 2 else "plastic", "theta": {"body.E": 7.0e10 + i},
                               "J": 1.0 / (i + 1), "status": "ok", "wall_time_s": 0.1, "is_best": True})
     out = services.workdir("artifacts") / "history.csv"
-    out.write_text("eval_index,J\n0,1.0\n1,0.5\n2,0.33\n", encoding="utf-8")
+    out.write_text("eval_index,J\n0,1.0\n1,0.5\n2,0.33\n", encoding="utf-8", newline="\n")
     services.add_artifact(out, "history")
     return fake_result()
 
@@ -177,6 +177,8 @@ def recipe_zip(*, version: int | None = None, recipe_id: str | None = None, edit
                extra: Mapping[str, bytes] | None = None, drop: tuple[str, ...] = ()) -> bytes:
     def mutate(files: dict[str, bytes]) -> None:
         text = files["manifest.yaml"].decode()
+        if version is not None or recipe_id is not None or edit_manifest is not None:
+            text = text.replace("\r\n", "\n")  # 체크아웃이 CRLF 여도 줄 단위 치환이 맞도록 (해시는 어차피 바뀌는 시험들)
         if version is not None:
             text = text.replace("version: 1\n", f"version: {version}\n", 1)
         if recipe_id is not None:

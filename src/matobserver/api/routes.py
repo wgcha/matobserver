@@ -105,9 +105,9 @@ def _create_job(ctx: AppContext, raw: bytes, idem_key: str | None, principal: Pr
     inputs = work / "inputs"
     try:
         (inputs / "runs").mkdir(parents=True, exist_ok=True)
-        (inputs / "request.json").write_text(json.dumps(vr.request, ensure_ascii=False, indent=2), encoding="utf-8")
+        (inputs / "request.json").write_text(json.dumps(vr.request, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
         for fname, content in run_json_files(vr.runs).items():
-            (inputs / "runs" / fname).write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8")
+            (inputs / "runs" / fname).write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8", newline="\n")
         for fid, src in vr.stp_files.items():
             (inputs / "stp").mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, inputs / "stp" / f"{fid}.stp")

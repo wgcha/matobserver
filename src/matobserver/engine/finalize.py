@@ -91,7 +91,7 @@ class Artifacts:
 
     def write_text(self, name: str, text: str) -> Path:
         p = self.root / name
-        p.write_text(text, encoding="utf-8")
+        p.write_text(text, encoding="utf-8", newline="\n")
         return p
 
     def write_json(self, name: str, obj: Any) -> Path:

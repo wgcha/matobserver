@@ -12,6 +12,7 @@ import io
 import os
 import re
 import stat
+import struct
 import zipfile
 import zlib
 from dataclasses import dataclass
@@ -54,6 +55,28 @@ def check_rel_path(name: str) -> str | None:
     if any(p == ".." for p in parts):
         return "상위 경로(..)"
     return None
+
+
+def raw_member_names(zf: zipfile.ZipFile) -> list[bytes]:
+    """중앙 디렉터리에 적힌 원본 멤버 이름(바이트). Windows 의 `zipfile` 은 ZipInfo 생성 때 `\\` 를 `/` 로 바꿔 버려
+    백슬래시 검사가 OS 마다 달라지므로, 검사는 이 원본으로 한다."""
+    fp = zf.fp
+    out: list[bytes] = []
+    if fp is None:
+        return out
+    pos = fp.tell()
+    try:
+        fp.seek(zf.start_dir)
+        for _ in range(len(zf.infolist())):
+            hdr = fp.read(46)
+            if len(hdr) < 46 or hdr[:4] != b"PK\x01\x02":
+                break
+            n, m, k = struct.unpack("<HHH", hdr[28:34])
+            out.append(fp.read(n))
+            fp.seek(m + k, 1)
+    finally:
+        fp.seek(pos)
+    return out
 
 
 def content_hash(entries: list[FileEntry]) -> str:
@@ -114,6 +137,9 @@ def extract_bundle(
             raise BundleError(E.RECIPE_BUNDLE_INVALID, f"파일 수 상한 초과 (최대 {max_files}개)")
         if sum(i.file_size for i in infos) > max_unpacked_bytes:
             raise BundleError(E.RECIPE_BUNDLE_INVALID, f"해제 총크기 상한 초과 (최대 {max_unpacked_bytes} bytes)")
+        for raw in raw_member_names(zf):
+            if b"\\" in raw:
+                raise BundleError(E.RECIPE_PATH_UNSAFE, "안전하지 않은 경로: 역슬래시 경로", field=raw.decode("utf-8", "replace"))
         seen: set[str] = set()
         for i in infos:
             name = i.filename
